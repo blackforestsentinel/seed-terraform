@@ -116,7 +116,8 @@ resource "azapi_resource" "function_app" {
   body = {
     kind = "functionapp,linux"
     properties = {
-      serverFarmId = azurerm_service_plan.this.id
+      # Azure liefert die ID mit "serverfarms" zurück; ohne Angleichen zeigt jeder Plan Drift.
+      serverFarmId = replace(azurerm_service_plan.this.id, "Microsoft.Web/serverFarms", "Microsoft.Web/serverfarms")
       httpsOnly    = true
 
       functionAppConfig = {
