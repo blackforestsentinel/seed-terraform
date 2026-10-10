@@ -70,13 +70,19 @@ variable "instance_memory_mb" {
 }
 
 variable "maximum_instance_count" {
-  description = "Obergrenze für das Hochskalieren der Function."
+  description = "Obergrenze für das Hochskalieren der Function (1 bis 1000). null gilt als Default, so kann ein Projekt den Wert je Umgebung weglassen."
   type        = number
   default     = 40
+  nullable    = false
+
+  validation {
+    condition     = var.maximum_instance_count == floor(var.maximum_instance_count) && var.maximum_instance_count >= 1 && var.maximum_instance_count <= 1000
+    error_message = "maximum_instance_count: ganze Zahl von 1 bis 1000 (Grenzen von Flex Consumption)."
+  }
 }
 
 variable "app_settings" {
-  description = "Zusätzliche App-Settings der Function, z. B. Auth__TenantId aus dem sso-Modul."
+  description = "Zusätzliche App-Settings der Function, z. B. Auth__TenantId aus dem sso-Modul. Die Grundeinstellungen des Moduls (AzureWebJobsStorage__*, APPLICATIONINSIGHTS_*, AZURE_CLIENT_ID, Seed__Project, Seed__Environment) gehen bei gleichem Namen vor."
   type        = map(string)
   default     = {}
 }
