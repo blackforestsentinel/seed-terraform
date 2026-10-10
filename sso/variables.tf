@@ -9,7 +9,7 @@ variable "environment" {
 }
 
 variable "spa_redirect_uris" {
-  description = "Redirect-URIs des Frontends: URL der Static Web App, in dev zusätzlich http://localhost:5173. Ohne abschließenden Schrägstrich, so wie window.location.origin."
+  description = "Redirect-URIs des Frontends: URL der Static Web App, in dev zusätzlich http://localhost:5173. Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich; das Frontend meldet sich mit window.location.origin + \"/\" an."
   type        = list(string)
 
   validation {

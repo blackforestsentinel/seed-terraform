@@ -7,6 +7,10 @@ locals {
   # deren Besitzerin sie ist; deshalb steht sie immer in owners.
   owners = distinct(concat([data.azuread_client_config.current.object_id], var.additional_owners))
 
+  # Entra ID verlangt bei URIs ohne Pfad einen abschließenden Schrägstrich
+  # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.
+  spa_redirect_uris = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
+
   # Stabile ID der delegierten Berechtigung, eindeutig je Projekt und Umgebung.
   scope_id = uuidv5("url", "https://github.com/blackforestsentinel/seed-terraform/sso/${local.base}/${var.scope_name}")
 }
@@ -57,7 +61,7 @@ resource "azuread_application" "spa" {
   owners           = local.owners
 
   single_page_application {
-    redirect_uris = var.spa_redirect_uris
+    redirect_uris = local.spa_redirect_uris
   }
 
   required_resource_access {
