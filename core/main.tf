@@ -124,6 +124,10 @@ resource "azapi_resource" "function_app" {
       serverFarmId = replace(azurerm_service_plan.this.id, "Microsoft.Web/serverFarms", "Microsoft.Web/serverfarms")
       httpsOnly    = true
 
+      # Key-Vault-Referenzen in den App-Settings (Modul keyvault) löst die Plattform mit der UAMI
+      # auf; ohne Angabe nähme sie die System-Identität, die es hier nicht gibt.
+      keyVaultReferenceIdentity = azurerm_user_assigned_identity.function.id
+
       functionAppConfig = {
         deployment = {
           storage = {
