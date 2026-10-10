@@ -26,3 +26,13 @@ jobs:
             terraform -chdir="$dir" validate
             echo "::endgroup::"
           done
+      - name: test modules
+        run: |
+          set -euo pipefail
+          for dir in */tests/; do
+            module="${dir%/tests/}"
+            echo "::group::$module"
+            terraform -chdir="$module" init -backend=false -input=false
+            terraform -chdir="$module" test
+            echo "::endgroup::"
+          done

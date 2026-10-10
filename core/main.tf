@@ -38,7 +38,10 @@ resource "azurerm_log_analytics_workspace" "this" {
   location            = var.location
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
-  tags                = local.tags
+  # Schutz vor Ausreißern wie einer Log-Schleife. Ist das Limit erreicht, nimmt der Workspace
+  # bis zum nächsten Tag (UTC) nichts mehr an; das Modul monitoring meldet das.
+  daily_quota_gb = var.log_daily_quota_gb
+  tags           = local.tags
 }
 
 resource "azurerm_application_insights" "this" {
@@ -47,7 +50,18 @@ resource "azurerm_application_insights" "this" {
   location            = var.location
   workspace_id        = azurerm_log_analytics_workspace.this.id
   application_type    = "web"
-  tags                = local.tags
+  # Nur Telemetrie mit Entra-Token: Host und Worker senden per Managed Identity
+  # (APPLICATIONINSIGHTS_AUTHENTICATION_STRING). Wer nur den Connection String kennt,
+  # kann damit keine Telemetrie einschleusen.
+  local_authentication_enabled = false
+  tags                         = local.tags
+}
+
+resource "azurerm_role_assignment" "app_insights_publisher" {
+  scope                = azurerm_application_insights.this.id
+  role_definition_name = "Monitoring Metrics Publisher"
+  principal_id         = azurerm_user_assigned_identity.function.principal_id
+  principal_type       = "ServicePrincipal"
 }
 
 # --- Host-Storage der Function (nur Managed Identity, keine Schlüssel) ---------
@@ -124,6 +138,10 @@ resource "azapi_resource" "function_app" {
       serverFarmId = replace(azurerm_service_plan.this.id, "Microsoft.Web/serverFarms", "Microsoft.Web/serverfarms")
       httpsOnly    = true
 
+      # Key-Vault-Referenzen in den App-Settings (Modul keyvault) löst die Plattform mit der UAMI
+      # auf; ohne Angabe nähme sie die System-Identität, die es hier nicht gibt.
+      keyVaultReferenceIdentity = azurerm_user_assigned_identity.function.id
+
       functionAppConfig = {
         deployment = {
           storage = {
@@ -168,6 +186,9 @@ resource "azapi_resource" "function_app" {
               AZURE_CLIENT_ID                       = azurerm_user_assigned_identity.function.client_id
               Seed__Project                         = var.name
               Seed__Environment                     = var.environment
+              # Telemetrie per Managed Identity. Liest der Host und, über
+              # ConfigureFunctionsApplicationInsights(), auch der Worker.
+              APPLICATIONINSIGHTS_AUTHENTICATION_STRING = "Authorization=AAD;ClientId=${azurerm_user_assigned_identity.function.client_id}"
             },
             var.app_settings,
           ) : { name = k, value = v }
@@ -178,8 +199,9 @@ resource "azapi_resource" "function_app" {
 
   response_export_values = ["properties.defaultHostName"]
 
-  # Ohne die Rollen startet der Host nicht, weil er seinen Storage nicht erreicht.
-  depends_on = [azurerm_role_assignment.host_storage]
+  # Ohne die Rollen startet der Host nicht, weil er seinen Storage nicht erreicht. Die
+  # Telemetrie-Rolle soll stehen, bevor die App per Entra-Token sendet.
+  depends_on = [azurerm_role_assignment.host_storage, azurerm_role_assignment.app_insights_publisher]
 }
 
 # --- Static Web App -----------------------------------------------------------
