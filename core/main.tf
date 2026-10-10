@@ -181,6 +181,11 @@ resource "azurerm_static_web_app" "this" {
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = local.tags
+
+  # Der Deploy-Task der Pipeline trägt das Repository ein; das ist kein Drift.
+  lifecycle {
+    ignore_changes = [repository_branch, repository_url]
+  }
 }
 
 # Basic Auth (Benutzername/Passwort) für SCM und FTP ausdrücklich aus, unabhängig vom
