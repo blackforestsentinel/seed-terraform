@@ -8,6 +8,8 @@ features:
   mcp: ${features.mcp}
   # Storage Account (Table, Blob) mit Managed-Identity-Zugriff (geplant)
   storage: false
+  # Key Vault für Secrets von Drittanbietern (API-Keys, Passwörter); Namen unter keyVault
+  keyVault: false
   # Custom Connector für die Power Platform, setzt sso voraus (Phase 4)
   customConnector: false
 
@@ -28,7 +30,7 @@ auth:
       description: Verwaltet die Anwendung
       # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
       memberTypes: [User]
-      capabilities: [settings.manage]
+      capabilities: [settings.manage, status.read]
   # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
   assignmentRequired: false
   # Vorhandene App-Registrierung je Umgebung statt neuer, auch aus einem anderen Tenant.
@@ -39,3 +41,14 @@ auth:
   #     apiClientId: 00000000-0000-0000-0000-000000000000
   #     spaClientId: 00000000-0000-0000-0000-000000000000
   #     apiScope: api://00000000-0000-0000-0000-000000000000/access_as_user
+
+# Nur mit features.keyVault. Terraform legt je Secret einen Platzhalter an; den Wert setzt ein
+# Mensch per CLI oder Portal (README, „Secret setzen“). Die Function liest stripe-key als
+# App-Setting Secrets__StripeKey. Beispiel:
+#   secrets: [stripe-key, smtp-password]
+#   secretOfficers: [00000000-0000-0000-0000-000000000000]   # Object-IDs von Personen oder Gruppen
+keyVault:
+  # Namen in Kleinbuchstaben, Wörter durch Bindestriche getrennt
+  secrets: []
+  # Wer Werte setzen darf (Key Vault Secrets Officer auf dem Vault)
+  secretOfficers: []

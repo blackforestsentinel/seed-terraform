@@ -20,6 +20,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
+| [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>` | Baustein 2 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -46,6 +47,8 @@ Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `st
 Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`; für das Modul monitoring `resource_group_id`, `application_insights_id` und `log_analytics_workspace_id`.
 
 Konvention: Das Modul setzt die App-Settings `Seed__Project` und `Seed__Environment`, die `Bfs.Seed.Functions.Core` ausliest.
+
+Key-Vault-Referenzen (`@Microsoft.KeyVault(...)`) in `app_settings` löst die Plattform mit der UAMI der Function auf (`keyVaultReferenceIdentity`); die Leserechte vergibt das Modul [`keyvault`](keyvault/README.md). Ab dieser Version zeigt der erste Plan nach dem Update dafür einmal eine Änderung an der Function App.
 
 CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu.
 
@@ -241,6 +244,8 @@ terraform -chdir=examples/mcp init -backend=false
 terraform -chdir=examples/mcp validate
 terraform -chdir=examples/monitoring init -backend=false
 terraform -chdir=examples/monitoring validate
+terraform -chdir=examples/keyvault init -backend=false
+terraform -chdir=examples/keyvault validate
 ```
 
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
