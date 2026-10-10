@@ -19,7 +19,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights mit Log Analytics, Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert | Phase 2 |
-| `storage` | Storage Account mit RBAC für die Function | geplant |
+| `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
@@ -101,6 +101,28 @@ Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `
 
 Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id` und `spa_client_id` (ohne SPA `null`).
 
+### storage
+
+Eigener Storage Account für die Daten des Projekts, getrennt vom Host-Storage aus `core`: ohne Shared Key, TLS 1.2, ohne öffentlichen Blob-Zugriff; Tabellen, Queues und Container aus `project.yaml`; Versionierung und Soft Delete als Standard, Lifecycle-Regeln für Löschfristen. Die Managed Identity der Function bekommt Blob, Queue und Table Data Contributor. Der Output `app_settings` beschreibt die identitätsbasierte Verbindung `SeedStorage` (Endpunkte, `credential = managedidentity`, Client-ID), die Queue-Trigger und `Bfs.Seed.Storage` nutzen.
+
+```hcl
+module "storage" {
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//storage?ref=<version>"
+  count  = local.cfg.features.storage ? 1 : 0
+
+  name                           = local.cfg.project
+  environment                    = var.environment
+  resource_group_name            = module.core.resource_group_name
+  location                       = module.core.location
+  function_identity_principal_id = module.core.function_identity_principal_id
+  function_identity_client_id    = module.core.function_identity_client_id
+  tables                         = ["jobs"]
+  queues                         = ["jobs"]
+}
+```
+
+Details zu Aufbewahrung, Rollen, Poison-Queue und zum Entfernen von Tabellen: [storage/README.md](storage/README.md).
+
 ## Entwickeln
 
 ```bash
@@ -111,6 +133,8 @@ terraform -chdir=examples/sso init -backend=false
 terraform -chdir=examples/sso validate
 terraform -chdir=examples/api-only init -backend=false
 terraform -chdir=examples/api-only validate
+terraform -chdir=examples/storage init -backend=false
+terraform -chdir=examples/storage validate
 ```
 
 ## Lizenz
