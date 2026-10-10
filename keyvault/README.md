@@ -102,7 +102,7 @@ Key-Vault-Referenzen funktionieren auf Flex Consumption, wenn `keyVaultReference
 | Auslöser | Wirkung |
 | --- | --- |
 | App-Settings ändern sich (Apply mit neuem Secret) | Referenzen sofort aufgelöst, 30 Sekunden nach der Rollenvergabe |
-| `…/config/configreferences/appsettings/refresh` (siehe oben) | neuer Wert nach rund 15 Sekunden |
+| `…/config/configreferences/appsettings/refresh` (siehe oben) | neuer Wert nach rund 15 Sekunden; direkt nach dem Setzen griff der erste Aufruf in seed-demo nicht, ein zweiter schon |
 | Deploy der Function (`az functionapp deployment source config-zip`, also jeder Pipeline-Lauf) | neuer Wert direkt nach dem Deploy |
 | `az functionapp restart` | **keine**: Die laufende Instanz startete nicht neu, auch nach 3,5 Minuten kam der alte Wert |
 | nichts | laut Microsoft spätestens nach 24 Stunden; nach 6 Minuten im Test noch der alte Wert |
