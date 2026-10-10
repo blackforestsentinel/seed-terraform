@@ -19,6 +19,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert | Phase 2 |
+| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -115,6 +116,28 @@ Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `
 
 Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id` und `spa_client_id` (ohne SPA `null`).
 
+### monitoring
+
+Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Details, Kosten und Entscheidungen in [monitoring/README.md](monitoring/README.md).
+
+```hcl
+module "monitoring" {
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
+  count  = length(local.alert_emails) > 0 ? 1 : 0
+
+  name                       = local.cfg.project
+  environment                = var.environment
+  resource_group_name        = module.core.resource_group_name
+  resource_group_id          = module.core.resource_group_id
+  location                   = module.core.location
+  application_insights_id    = module.core.application_insights_id
+  log_analytics_workspace_id = module.core.log_analytics_workspace_id
+  alert_emails               = local.alert_emails
+  health_check_url           = "${module.core.function_app_url}/api/health"
+  budget_amount              = 20
+}
+```
+
 ## Entwickeln
 
 ```bash
@@ -125,6 +148,8 @@ terraform -chdir=examples/sso init -backend=false
 terraform -chdir=examples/sso validate
 terraform -chdir=examples/api-only init -backend=false
 terraform -chdir=examples/api-only validate
+terraform -chdir=examples/monitoring init -backend=false
+terraform -chdir=examples/monitoring validate
 ```
 
 ## Lizenz
