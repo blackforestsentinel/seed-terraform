@@ -19,6 +19,10 @@ extends:
   template: templates/web-app.yml@seed
   parameters:
     project: ${name}
+%{ if !frontend ~}
+    # Ohne Frontend (project.yaml: hosting.staticWebApp: none)
+    frontend: false
+%{ endif ~}
     serviceConnection: ${service_connection}
     terraformState:
       resourceGroup: ${terraform_state.resource_group}

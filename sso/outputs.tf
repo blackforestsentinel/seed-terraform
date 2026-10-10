@@ -29,8 +29,8 @@ output "api_scope_id" {
 }
 
 output "spa_client_id" {
-  description = "Client-ID der SPA-App-Registrierung."
-  value       = azuread_application.spa.client_id
+  description = "Client-ID der SPA-App-Registrierung, null ohne Frontend."
+  value       = one(azuread_application.spa[*].client_id)
 }
 
 output "app_settings" {
@@ -42,11 +42,12 @@ output "app_settings" {
   }
 }
 
+# Ohne SPA bleibt die Map leer; config.json bekommt dann keinen Auth-Teil.
 output "frontend_config" {
-  description = "Auth-Teil der Laufzeitkonfiguration des Frontends (config.json), passend zu @blackforestsentinel/seed-web-auth."
+  description = "Auth-Teil der Laufzeitkonfiguration des Frontends (config.json), passend zu @blackforestsentinel/seed-web-auth. Leer ohne Frontend."
   value = {
-    auth = {
-      clientId = azuread_application.spa.client_id
+    for spa in azuread_application.spa : "auth" => {
+      clientId = spa.client_id
       tenantId = data.azuread_client_config.current.tenant_id
       apiScope = local.api_scope
     }

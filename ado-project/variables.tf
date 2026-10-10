@@ -21,6 +21,12 @@ variable "features" {
   default = {}
 }
 
+variable "frontend" {
+  description = "Projekt mit Frontend (Static Web App). false: nur API; project.yaml bekommt hosting.staticWebApp: none und azure-pipelines.yml frontend: false."
+  type        = bool
+  default     = true
+}
+
 variable "environments" {
   description = "Umgebungen in Deploy-Reihenfolge."
   type        = list(string)
@@ -73,5 +79,5 @@ variable "template_url" {
 variable "pipelines_version" {
   description = "Tag von seed-pipelines, den das Projekt einbindet."
   type        = string
-  default     = "v0.3.0"
+  default     = "v0.4.0"
 }
