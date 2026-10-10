@@ -44,6 +44,7 @@ output "app_settings" {
     # Nur bei einer anderen Berechtigung als dem Default von Bfs.Seed.Auth, damit sich bestehende
     # Function Apps nicht ändern.
     local.api_scope_name == "access_as_user" ? {} : { Auth__RequiredScope = local.api_scope_name },
+    local.mcp_app_settings,
   )
 }
 
