@@ -4,6 +4,8 @@ project: ${name}
 features:
   # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend
   sso: ${features.sso}
+  # MCP-Server unter /api/mcp für Claude, VS Code und andere KI-Werkzeuge, setzt sso voraus
+  mcp: ${features.mcp}
   # Storage Account (Table, Blob) mit Managed-Identity-Zugriff (geplant)
   storage: false
   # Custom Connector für die Power Platform, setzt sso voraus (Phase 4)

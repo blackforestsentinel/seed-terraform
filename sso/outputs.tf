@@ -35,11 +35,11 @@ output "spa_client_id" {
 
 output "app_settings" {
   description = "App-Settings für die Function; Bfs.Seed.Auth liest sie aus dem Abschnitt Auth."
-  value = {
+  value = merge({
     Auth__TenantId = data.azuread_client_config.current.tenant_id
     Auth__ClientId = azuread_application.api.client_id
     Auth__Audience = local.api_identifier_uri
-  }
+  }, local.mcp_app_settings)
 }
 
 # Ohne SPA bleibt die Map leer; config.json bekommt dann keinen Auth-Teil.

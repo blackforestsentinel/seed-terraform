@@ -38,6 +38,22 @@ resource "azuread_application" "api" {
       user_consent_display_name  = "Zugriff auf ${local.base}"
       user_consent_description   = "Erlaubt der Anwendung, in deinem Namen auf die API von ${local.base} zuzugreifen."
     }
+
+    # Mit mcp der Scope mcp_access, nur für den MCP-Endpunkt (mcp.tf).
+    dynamic "oauth2_permission_scope" {
+      for_each = local.mcp_permission_scopes
+
+      content {
+        id                         = oauth2_permission_scope.value.id
+        value                      = oauth2_permission_scope.key
+        type                       = "User"
+        enabled                    = true
+        admin_consent_display_name = oauth2_permission_scope.value.admin_consent_display_name
+        admin_consent_description  = oauth2_permission_scope.value.admin_consent_description
+        user_consent_display_name  = oauth2_permission_scope.value.user_consent_display_name
+        user_consent_description   = oauth2_permission_scope.value.user_consent_description
+      }
+    }
   }
 
   # Die Identifier-URI braucht die Client-ID und entsteht deshalb als eigene Ressource.
