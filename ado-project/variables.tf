@@ -58,6 +58,12 @@ variable "terraform_state" {
   })
 }
 
+variable "authorize_service_connections" {
+  description = "Pipeline für beide Service Connections berechtigen. Braucht die Administrator-Rolle an den Service Connections; seed-scaffold lässt das aus, dort gibt ein Admin beim ersten Lauf frei."
+  type        = bool
+  default     = true
+}
+
 variable "template_url" {
   description = "Git-URL des Projekt-Templates, aus dem das Repo importiert wird."
   type        = string
