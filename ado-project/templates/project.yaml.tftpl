@@ -75,3 +75,22 @@ storage:
   #     prefixes: [uploads/]
   #     coolAfterDays: 30       # optional: nach 30 Tagen ohne Änderung in den Tarif Cool
   #     deleteAfterDays: 90     # nach 90 Tagen ohne Änderung löschen
+
+# Eigene App-Settings des Projekts für alle Umgebungen. Werte sind Text. Seed-eigene Settings
+# (Seed__*, Auth__*, SeedStorage__*, Secrets__*, Mcp__* …) gehen bei gleichem Namen vor.
+# Im Code liest IConfiguration Beispiel__Zeitzone als Beispiel:Zeitzone. Werte, die YAML anders
+# lesen könnte (007, 1.50, on, yes), in Anführungszeichen. Keine Secrets: Die Datei liegt im
+# Repo, Secrets gehören in keyVault.
+# settings:
+#   Beispiel__Zeitzone: Europe/Berlin
+
+# Abweichungen je Umgebung; der Name entspricht environments[].name in azure-pipelines.yml.
+# Rangfolge der App-Settings: Seed-eigene vor environments.<name>.settings vor settings.
+# environments:
+#   test:
+#     features: { keyVault: false }   # überschreibt einzelne Schalter aus features
+#     maxInstances: 1                 # höchstens so viele Instanzen der Function
+#     settings:                       # ergänzt und überschreibt settings
+#       Beispiel__Mocks: "true"
+#   prod:
+#     maxInstances: 4
