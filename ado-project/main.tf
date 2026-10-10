@@ -29,6 +29,11 @@ locals {
   )
 
   branch = "refs/heads/main"
+
+  # PR-Läufe ohne Deploy kennt web-app.yml erst ab seed-pipelines v0.5.0; mit einer älteren
+  # Version würde die PR-Validierung den PR-Stand deployen. Branches (Tests) gelten als neu.
+  pipelines_semver  = try([for part in regex("^v(\\d+)\\.(\\d+)\\.(\\d+)$", var.pipelines_version) : tonumber(part)], null)
+  pr_runs_supported = local.pipelines_semver == null ? true : local.pipelines_semver[0] * 1000000 + local.pipelines_semver[1] * 1000 + local.pipelines_semver[2] >= 5000
 }
 
 # --- Repo aus dem Template ------------------------------------------------------
@@ -148,4 +153,40 @@ resource "azuredevops_pipeline_authorization" "environments" {
   resource_id = each.value.id
   type        = "environment"
   pipeline_id = azuredevops_build_definition.this.id
+}
+
+# --- PR-Validierung -------------------------------------------------------------
+
+# Pull Requests auf main brauchen einen erfolgreichen Lauf der Projekt-Pipeline. Sie erkennt
+# PR-Läufe selbst und baut, testet und scannt dann nur, ohne Deploy und Service Connection;
+# eine zweite Pipeline-Definition mit eigenen Freigaben ist so nicht nötig. Als Pflicht-Policy
+# sperrt sie direkte Pushes auf main, deshalb entsteht sie erst nach den Dateien oben.
+resource "azuredevops_branch_policy_build_validation" "this" {
+  count = var.pr_validation ? 1 : 0
+
+  project_id = data.azuredevops_project.this.id
+  enabled    = true
+  blocking   = true
+
+  settings {
+    display_name        = "PR-Validierung"
+    build_definition_id = azuredevops_build_definition.this.id
+    # Ein Ergebnis gilt 12 Stunden, auch wenn sich main ändert: Mit einem parallelen Job soll
+    # nicht jeder Merge alle offenen PRs neu bauen.
+    queue_on_source_update_only = true
+    valid_duration              = 720
+
+    scope {
+      repository_id  = azuredevops_git_repository.this.id
+      repository_ref = local.branch
+      match_type     = "Exact"
+    }
+  }
+
+  lifecycle {
+    precondition {
+      condition     = local.pr_runs_supported
+      error_message = "pr_validation braucht pipelines_version ab v0.5.0: Ältere Versionen von seed-pipelines deployen auch in PR-Läufen."
+    }
+  }
 }
