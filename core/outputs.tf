@@ -3,6 +3,11 @@ output "resource_group_name" {
   value       = azurerm_resource_group.this.name
 }
 
+output "resource_group_id" {
+  description = "ID der Resource Group, z. B. als Geltungsbereich des Budgets im Modul monitoring."
+  value       = azurerm_resource_group.this.id
+}
+
 output "location" {
   description = "Region von Function, Storage und Monitoring."
   value       = var.location
@@ -48,6 +53,16 @@ output "custom_domain_dns_records" {
       cname     = azurerm_static_web_app.this[0].default_host_name
     }
   }
+}
+
+output "application_insights_id" {
+  description = "ID von Application Insights, für Alarme und Webtests im Modul monitoring."
+  value       = azurerm_application_insights.this.id
+}
+
+output "log_analytics_workspace_id" {
+  description = "ID des Log Analytics Workspace."
+  value       = azurerm_log_analytics_workspace.this.id
 }
 
 output "application_insights_connection_string" {
