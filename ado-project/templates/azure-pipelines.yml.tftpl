@@ -1,0 +1,30 @@
+# Angelegt von seed-scaffold. Die eigentliche Pipeline liegt im Hub:
+# github.com/blackforestsentinel/seed-pipelines
+trigger:
+  branches:
+    include:
+      - main
+
+pr: none
+
+resources:
+  repositories:
+    - repository: seed
+      type: github
+      name: blackforestsentinel/seed-pipelines
+      ref: refs/tags/${pipelines_version}
+      endpoint: ${github_connection}
+
+extends:
+  template: templates/web-app.yml@seed
+  parameters:
+    project: ${name}
+    serviceConnection: ${service_connection}
+    terraformState:
+      resourceGroup: ${terraform_state.resource_group}
+      storageAccount: ${terraform_state.storage_account}
+      container: ${terraform_state.container}
+    environments:
+%{ for env in environments ~}
+      - name: ${env}
+%{ endfor ~}
