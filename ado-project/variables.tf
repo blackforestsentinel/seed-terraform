@@ -73,5 +73,5 @@ variable "template_url" {
 variable "pipelines_version" {
   description = "Tag von seed-pipelines, den das Projekt einbindet."
   type        = string
-  default     = "v0.2.0"
+  default     = "v0.3.0"
 }
