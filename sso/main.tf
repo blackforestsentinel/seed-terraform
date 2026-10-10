@@ -11,6 +11,11 @@ locals {
   # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.
   spa_redirect_uris = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
 
+  # Bridge-Seite für die stille Anmeldung im iframe (MSAL 5), je Origin eine Redirect-URI.
+  spa_bridge_uris = var.spa_redirect_bridge_path == null ? [] : distinct([
+    for uri in local.spa_redirect_uris : "${regex("^https?://[^/]+", uri)}${var.spa_redirect_bridge_path}"
+  ])
+
   # Ohne Redirect-URIs (Projekt ohne Frontend) entsteht nur die API-Registrierung.
   spa = length(var.spa_redirect_uris) > 0
 
@@ -18,9 +23,11 @@ locals {
   scope_id = uuidv5("url", "https://github.com/blackforestsentinel/seed-terraform/sso/${local.base}/${var.scope_name}")
 }
 
-# --- API: von Browser und Custom Connector aufgerufen --------------------------
+# --- API: von Browser, Custom Connector und Diensten aufgerufen ------------------
 
 resource "azuread_application" "api" {
+  count = local.create ? 1 : 0
+
   display_name     = "${local.base}-api"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
@@ -40,37 +47,45 @@ resource "azuread_application" "api" {
     }
   }
 
-  # Die Identifier-URI braucht die Client-ID und entsteht deshalb als eigene Ressource.
+  # Die Identifier-URI braucht die Client-ID und entsteht deshalb als eigene Ressource,
+  # die App-Rollen ebenso (roles.tf).
   lifecycle {
-    ignore_changes = [identifier_uris]
+    ignore_changes = [identifier_uris, app_role]
   }
 }
 
 resource "azuread_application_identifier_uri" "api" {
-  application_id = azuread_application.api.id
-  identifier_uri = "api://${azuread_application.api.client_id}"
+  count = local.create ? 1 : 0
+
+  application_id = azuread_application.api[0].id
+  identifier_uri = "api://${azuread_application.api[0].client_id}"
 }
 
 resource "azuread_service_principal" "api" {
-  client_id = azuread_application.api.client_id
+  count = local.create ? 1 : 0
+
+  client_id = azuread_application.api[0].client_id
   owners    = local.owners
+
+  # Mit true bekommen nur Personen, Gruppen und Anwendungen mit einer App-Rolle ein Token.
+  app_role_assignment_required = var.assignment_required
 }
 
 # --- SPA: Login im Frontend per MSAL --------------------------------------------
 
 resource "azuread_application" "spa" {
-  count = local.spa ? 1 : 0
+  count = local.create && local.spa ? 1 : 0
 
   display_name     = "${local.base}-web"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
 
   single_page_application {
-    redirect_uris = local.spa_redirect_uris
+    redirect_uris = concat(local.spa_redirect_uris, local.spa_bridge_uris)
   }
 
   required_resource_access {
-    resource_app_id = azuread_application.api.client_id
+    resource_app_id = azuread_application.api[0].client_id
 
     resource_access {
       id   = local.scope_id
@@ -80,7 +95,7 @@ resource "azuread_application" "spa" {
 }
 
 resource "azuread_service_principal" "spa" {
-  count = local.spa ? 1 : 0
+  count = local.create && local.spa ? 1 : 0
 
   client_id = azuread_application.spa[0].client_id
   owners    = local.owners
@@ -88,9 +103,9 @@ resource "azuread_service_principal" "spa" {
 
 # Das Frontend darf die API ohne Einwilligungsdialog aufrufen.
 resource "azuread_application_pre_authorized" "spa" {
-  count = local.spa ? 1 : 0
+  count = local.create && local.spa ? 1 : 0
 
-  application_id       = azuread_application.api.id
+  application_id       = azuread_application.api[0].id
   authorized_client_id = azuread_application.spa[0].client_id
   permission_ids       = [local.scope_id]
 }
@@ -110,4 +125,20 @@ moved {
 moved {
   from = azuread_application_pre_authorized.spa
   to   = azuread_application_pre_authorized.spa[0]
+}
+
+# Bis v0.5.0 ohne count; seitdem kann eine vorhandene Registrierung an ihre Stelle treten.
+moved {
+  from = azuread_application.api
+  to   = azuread_application.api[0]
+}
+
+moved {
+  from = azuread_application_identifier_uri.api
+  to   = azuread_application_identifier_uri.api[0]
+}
+
+moved {
+  from = azuread_service_principal.api
+  to   = azuread_service_principal.api[0]
 }
