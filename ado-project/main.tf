@@ -3,11 +3,13 @@ data "azuredevops_project" "this" {
 }
 
 data "azuredevops_serviceendpoint_azurerm" "this" {
+  count                 = var.authorize_service_connections ? 1 : 0
   project_id            = data.azuredevops_project.this.id
   service_endpoint_name = var.service_connection
 }
 
 data "azuredevops_serviceendpoint_github" "this" {
+  count                 = var.authorize_service_connections ? 1 : 0
   project_id            = data.azuredevops_project.this.id
   service_endpoint_name = var.github_connection
 }
@@ -127,10 +129,10 @@ resource "azuredevops_build_definition" "this" {
 }
 
 resource "azuredevops_pipeline_authorization" "endpoints" {
-  for_each = {
-    azure  = data.azuredevops_serviceendpoint_azurerm.this.id
-    github = data.azuredevops_serviceendpoint_github.this.id
-  }
+  for_each = var.authorize_service_connections ? {
+    azure  = data.azuredevops_serviceendpoint_azurerm.this[0].id
+    github = data.azuredevops_serviceendpoint_github.this[0].id
+  } : {}
 
   project_id  = data.azuredevops_project.this.id
   resource_id = each.value
