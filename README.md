@@ -18,7 +18,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | Modul | Inhalt | Status |
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights mit Log Analytics, Host-Storage mit Managed Identity | Phase 1 |
-| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert | Phase 2 |
+| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients | Phase 2 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -101,6 +101,33 @@ Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `
 
 Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id` und `spa_client_id` (ohne SPA `null`).
 
+#### MCP
+
+Für den MCP-Server aus `Bfs.Seed.Mcp` (im Template `features.mcp`):
+
+```hcl
+module "sso" {
+  # ...
+  mcp               = true
+  mcp_custom_domain = "mcp.example.org" # optional, für Claude nötig
+}
+```
+
+| Was | Wozu |
+| --- | --- |
+| Scope `mcp_access` an der API | Gilt nur für `/api/mcp`. Ein Token, das ein MCP-Client bekommt, erreicht die übrige API nicht; Web-Tokens mit `access_as_user` erreichen den MCP-Endpunkt nicht. |
+| Registrierung `<name>-<umgebung>-mcp` | Öffentlicher Client (Mobile und Desktop, PKCE, kein Secret) für Clients ohne eigene Entra-Registrierung. Redirect-URIs aus `mcp_redirect_uris`, Standard: Claude (`https://claude.ai/api/mcp/auth_callback`) und Claude Code (`http://localhost/callback`, `http://127.0.0.1/callback`; Entra ignoriert bei Loopback den Port). |
+| Vorautorisierung | Dieser Client und `mcp_preauthorized_client_ids` (Standard: VS Code, `aebc6443-996d-45c2-90f0-388ff96faa56`) bekommen `mcp_access` ohne Einwilligungsdialog, nie `access_as_user`. |
+| Application ID URI `https://<mcp_custom_domain>/api/mcp` | Nur mit `mcp_custom_domain`, dazu das App-Setting `Mcp__Resource`. |
+
+**Warum eine eigene Domain für Claude:** Claude sendet die MCP-Adresse als `resource` (RFC 8707). Entra stellt nur dann ein Token aus, wenn diese Adresse eine Application ID URI der API ist, sonst kommt nach der Anmeldung `AADSTS9010010`. HTTPS-URIs nimmt Entra dort nur auf Domains an, die im Tenant verifiziert sind; `*.azurewebsites.net` scheidet aus. Die Domain muss deshalb vor dem Apply im Tenant verifiziert sein, sonst scheitert `azuread_application_identifier_uri.mcp`. DNS-Einträge, Hostname-Bindung und Zertifikat an der Function legt das Modul nicht an; die Schritte stehen in der README von seed-template. VS Code meldet sich mit seiner eigenen Registrierung ohne `resource` an und kommt ohne eigene Domain aus.
+
+**Keine Allowlist der Clients:** Die API nimmt jedes Token mit ihrer Audience und `mcp_access` an, gleich von welchem Client. `mcp_access` ist ein Scope vom Typ User, den jede App im Tenant mit Einwilligung bekommen kann; deshalb gilt er nur für den MCP-Endpunkt, und was jemand dort darf, entscheiden die Capabilities der Werkzeuge.
+
+**Einmal je Umgebung von Hand:** An `<name>-<umgebung>-mcp` die Administratorzustimmung erteilen (Entra Admin Center → App-Registrierungen → API-Berechtigungen). Sie deckt `offline_access` ab, also das Refresh-Token; ohne sie sehen Personen einen Einwilligungsdialog oder „Administratorgenehmigung erforderlich“. Die Pipeline-Identität könnte das nur mit `DelegatedPermissionGrant.ReadWrite.All`.
+
+Ausgaben: `mcp_client_id` (in Claude „OAuth Client ID“, in Claude Code `--client-id`), `mcp_resource` (MCP-Adresse auf der eigenen Domain, sonst `null`), `mcp_scope`. Mit `mcp = false` entsteht nichts davon, und bestehende Projekte sehen nach einem Update des Moduls keine Änderung. Abschalten entfernt Registrierung, Vorautorisierungen, URI und Scope; Entra verlangt, dass der Scope vorher deaktiviert wird, das erledigt der Provider.
+
 ## Entwickeln
 
 ```bash
@@ -111,6 +138,8 @@ terraform -chdir=examples/sso init -backend=false
 terraform -chdir=examples/sso validate
 terraform -chdir=examples/api-only init -backend=false
 terraform -chdir=examples/api-only validate
+terraform -chdir=examples/mcp init -backend=false
+terraform -chdir=examples/mcp validate
 ```
 
 ## Lizenz
