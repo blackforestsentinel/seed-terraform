@@ -21,7 +21,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>` | Baustein 2 |
-| `storage` | Storage Account mit RBAC für die Function | geplant |
+| `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
@@ -226,6 +226,28 @@ module "monitoring" {
 }
 ```
 
+### storage
+
+Eigener Storage Account für die Daten des Projekts, getrennt vom Host-Storage aus `core`: ohne Shared Key, TLS 1.2, ohne öffentlichen Blob-Zugriff; Tabellen, Queues und Container aus `project.yaml`; Versionierung und Soft Delete als Standard, Lifecycle-Regeln für Löschfristen. Die Managed Identity der Function bekommt Blob, Queue und Table Data Contributor. Der Output `app_settings` beschreibt die identitätsbasierte Verbindung `SeedStorage` (Endpunkte, `credential = managedidentity`, Client-ID), die Queue-Trigger und `Bfs.Seed.Storage` nutzen.
+
+```hcl
+module "storage" {
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//storage?ref=<version>"
+  count  = local.cfg.features.storage ? 1 : 0
+
+  name                           = local.cfg.project
+  environment                    = var.environment
+  resource_group_name            = module.core.resource_group_name
+  location                       = module.core.location
+  function_identity_principal_id = module.core.function_identity_principal_id
+  function_identity_client_id    = module.core.function_identity_client_id
+  tables                         = ["jobs"]
+  queues                         = ["jobs"]
+}
+```
+
+Details zu Aufbewahrung, Rollen, Poison-Queue und zum Entfernen von Tabellen: [storage/README.md](storage/README.md).
+
 ## Entwickeln
 
 ```bash
@@ -246,6 +268,8 @@ terraform -chdir=examples/monitoring init -backend=false
 terraform -chdir=examples/monitoring validate
 terraform -chdir=examples/keyvault init -backend=false
 terraform -chdir=examples/keyvault validate
+terraform -chdir=examples/storage init -backend=false
+terraform -chdir=examples/storage validate
 ```
 
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
