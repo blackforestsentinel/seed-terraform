@@ -38,8 +38,10 @@ variable "alert_emails" {
   type        = list(string)
 
   validation {
-    condition     = length(var.alert_emails) > 0 && alltrue([for e in var.alert_emails : can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", e))])
-    error_message = "alert_emails: mindestens eine E-Mail-Adresse. Ohne Empfänger das Modul per count = 0 weglassen."
+    # Keine Mindestanzahl: terraform validate prüft die Regel auch bei count = 0, und das Template
+    # bindet das Modul ohne Empfänger gar nicht erst ein.
+    condition     = alltrue([for e in var.alert_emails : can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", e))])
+    error_message = "alert_emails: nur gültige E-Mail-Adressen. Ohne Empfänger das Modul per count = 0 weglassen."
   }
 }
 
