@@ -1,0 +1,14 @@
+# Einzige Wahrheit über Projekt und Features. Terraform und Pipeline lesen diese Datei.
+project: ${name}
+
+features:
+  # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend
+  sso: ${features.sso}
+  # Storage Account (Table, Blob) mit Managed-Identity-Zugriff (geplant)
+  storage: false
+  # Custom Connector für die Power Platform, setzt sso voraus (Phase 4)
+  customConnector: false
+
+hosting:
+  # Tarif der Static Web App: Free (höchstens 10 je Subscription) oder Standard
+  staticWebApp: Free
