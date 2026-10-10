@@ -10,6 +10,10 @@ locals {
   storage_account_name = "st${substr(replace(local.base, "-", ""), 0, 16)}${local.suffix}"
   function_app_name    = "func-${local.base}-${local.suffix}"
 
+  # Ohne Frontend (static_web_app_sku = None) entsteht keine Static Web App.
+  static_web_app = var.static_web_app_sku != "None"
+  custom_domains = toset(var.custom_domains)
+
   tags = merge(
     {
       "seed:project"     = var.name
@@ -144,8 +148,14 @@ resource "azapi_resource" "function_app" {
       siteConfig = {
         minTlsVersion = "1.2"
         ftpsState     = "Disabled"
+        # Frontend unter der Standard-URL und den eigenen Domains; ohne Static Web App nur
+        # die zusätzlichen Origins.
         cors = {
-          allowedOrigins     = concat(["https://${azurerm_static_web_app.this.default_host_name}"], var.cors_allowed_origins)
+          allowedOrigins = concat(
+            [for host in azurerm_static_web_app.this[*].default_host_name : "https://${host}"],
+            [for domain in local.custom_domains : "https://${domain}"],
+            var.cors_allowed_origins,
+          )
           supportCredentials = false
         }
         appSettings = [
@@ -175,6 +185,8 @@ resource "azapi_resource" "function_app" {
 # --- Static Web App -----------------------------------------------------------
 
 resource "azurerm_static_web_app" "this" {
+  count = local.static_web_app ? 1 : 0
+
   name                = "swa-${local.base}"
   resource_group_name = azurerm_resource_group.this.name
   location            = var.static_web_app_location
@@ -185,6 +197,42 @@ resource "azurerm_static_web_app" "this" {
   # Der Deploy-Task der Pipeline trägt das Repository ein; das ist kein Drift.
   lifecycle {
     ignore_changes = [repository_branch, repository_url]
+  }
+}
+
+# Bis v0.4.0 ohne count. Die Verschiebung ändert nur den State, nicht die Ressource;
+# die Pipeline verlangt dafür keine Freigabe.
+moved {
+  from = azurerm_static_web_app.this
+  to   = azurerm_static_web_app.this[0]
+}
+
+# --- Eigene Domains -----------------------------------------------------------
+
+# Validierung per TXT-Eintrag: Terraform wartet nur auf das Token, nicht auf das DNS. Der
+# Apply läuft also auch durch, wenn der Eintrag erst danach gesetzt wird (DNS liegt meist
+# außerhalb von Azure); Azure prüft ihn dann selbst. cname-delegation dagegen wartet im
+# Apply auf einen schon gesetzten CNAME (bis 30 Minuten, dann Fehler) und geht nicht für
+# Apex-Domains.
+resource "azurerm_static_web_app_custom_domain" "this" {
+  for_each = local.custom_domains
+
+  static_web_app_id = azurerm_static_web_app.this[0].id
+  domain_name       = each.value
+  validation_type   = "dns-txt-token"
+}
+
+# Azure leert das Token, sobald die Domain validiert ist. Ohne Festhalten änderte sich danach
+# der Output, und der nächste Plan verlangte eine Freigabe ohne echte Änderung. Das Token
+# steht ohnehin öffentlich im DNS und ist kein Geheimnis.
+resource "terraform_data" "custom_domain_token" {
+  for_each = local.custom_domains
+
+  input = nonsensitive(azurerm_static_web_app_custom_domain.this[each.key].validation_token)
+
+  lifecycle {
+    ignore_changes       = [input]
+    replace_triggered_by = [azurerm_static_web_app_custom_domain.this[each.key]]
   }
 }
 

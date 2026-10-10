@@ -11,6 +11,9 @@ locals {
   # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.
   spa_redirect_uris = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
 
+  # Ohne Redirect-URIs (Projekt ohne Frontend) entsteht nur die API-Registrierung.
+  spa = length(var.spa_redirect_uris) > 0
+
   # Stabile ID der delegierten Berechtigung, eindeutig je Projekt und Umgebung.
   scope_id = uuidv5("url", "https://github.com/blackforestsentinel/seed-terraform/sso/${local.base}/${var.scope_name}")
 }
@@ -56,6 +59,8 @@ resource "azuread_service_principal" "api" {
 # --- SPA: Login im Frontend per MSAL --------------------------------------------
 
 resource "azuread_application" "spa" {
+  count = local.spa ? 1 : 0
+
   display_name     = "${local.base}-web"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
@@ -75,13 +80,34 @@ resource "azuread_application" "spa" {
 }
 
 resource "azuread_service_principal" "spa" {
-  client_id = azuread_application.spa.client_id
+  count = local.spa ? 1 : 0
+
+  client_id = azuread_application.spa[0].client_id
   owners    = local.owners
 }
 
 # Das Frontend darf die API ohne Einwilligungsdialog aufrufen.
 resource "azuread_application_pre_authorized" "spa" {
+  count = local.spa ? 1 : 0
+
   application_id       = azuread_application.api.id
-  authorized_client_id = azuread_application.spa.client_id
+  authorized_client_id = azuread_application.spa[0].client_id
   permission_ids       = [local.scope_id]
+}
+
+# Bis v0.4.0 ohne count. Die Verschiebungen ändern nur den State, nicht die Registrierungen;
+# die Pipeline verlangt dafür keine Freigabe.
+moved {
+  from = azuread_application.spa
+  to   = azuread_application.spa[0]
+}
+
+moved {
+  from = azuread_service_principal.spa
+  to   = azuread_service_principal.spa[0]
+}
+
+moved {
+  from = azuread_application_pre_authorized.spa
+  to   = azuread_application_pre_authorized.spa[0]
 }
