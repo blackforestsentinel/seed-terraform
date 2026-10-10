@@ -55,7 +55,7 @@ resource "azuredevops_git_repository_file" "project_yaml" {
   repository_id       = azuredevops_git_repository.this.id
   branch              = local.branch
   file                = "project.yaml"
-  content             = templatefile("${path.module}/templates/project.yaml.tftpl", { name = var.name, features = var.features })
+  content             = templatefile("${path.module}/templates/project.yaml.tftpl", { name = var.name, features = var.features, frontend = var.frontend })
   commit_message      = "seed-scaffold: project.yaml für ${var.name}"
   overwrite_on_create = true
 
@@ -70,6 +70,7 @@ resource "azuredevops_git_repository_file" "pipeline" {
   file          = "azure-pipelines.yml"
   content = templatefile("${path.module}/templates/azure-pipelines.yml.tftpl", {
     name               = var.name
+    frontend           = var.frontend
     environments       = var.environments
     service_connection = var.service_connection
     github_connection  = var.github_connection

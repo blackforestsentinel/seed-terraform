@@ -28,14 +28,26 @@ output "function_identity_client_id" {
   value       = azurerm_user_assigned_identity.function.client_id
 }
 
+# Ohne Static Web App leer statt null: Die Pipeline liest die Werte mit terraform output -raw.
 output "static_web_app_name" {
-  description = "Name der Static Web App, Ziel des Frontend-Deployments."
-  value       = azurerm_static_web_app.this.name
+  description = "Name der Static Web App, Ziel des Frontend-Deployments. Leer ohne Frontend (static_web_app_sku = None)."
+  value       = local.static_web_app ? azurerm_static_web_app.this[0].name : ""
 }
 
 output "static_web_app_url" {
-  description = "Öffentliche URL des Frontends."
-  value       = "https://${azurerm_static_web_app.this.default_host_name}"
+  description = "Öffentliche URL des Frontends unter der Standard-Domain von Azure. Leer ohne Frontend."
+  value       = local.static_web_app ? "https://${azurerm_static_web_app.this[0].default_host_name}" : ""
+}
+
+output "custom_domain_dns_records" {
+  description = "DNS-Einträge je eigener Domain: TXT-Eintrag für die Validierung (txt_name, txt_value) und das Ziel für den Datenverkehr (cname; bei einer Apex-Domain als ALIAS, ANAME oder per CNAME-Flattening)."
+  value = {
+    for domain in local.custom_domains : domain => {
+      txt_name  = "_dnsauth.${domain}"
+      txt_value = terraform_data.custom_domain_token[domain].output
+      cname     = azurerm_static_web_app.this[0].default_host_name
+    }
+  }
 }
 
 output "application_insights_connection_string" {
