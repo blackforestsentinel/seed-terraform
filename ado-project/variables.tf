@@ -16,8 +16,9 @@ variable "name" {
 variable "features" {
   description = "Feature-Auswahl für project.yaml."
   type = object({
-    sso = optional(bool, false)
-    mcp = optional(bool, false)
+    sso     = optional(bool, false)
+    mcp     = optional(bool, false)
+    storage = optional(bool, false)
   })
   default = {}
 }
