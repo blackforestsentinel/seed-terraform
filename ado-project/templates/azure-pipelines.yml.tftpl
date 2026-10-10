@@ -8,6 +8,14 @@ trigger:
 # PR-Läufe startet in Azure Repos die Branch-Policy auf main, nicht dieser Trigger.
 pr: none
 
+# Nur von Hand ankreuzen: erlaubt einem Lauf, Daten zu löschen (Storage, Key Vault, Logs).
+# Ohne Bestätigung endet ein Plan, der solche Ressourcen löscht oder ersetzt, vor der Freigabe.
+parameters:
+  - name: confirmDataDeletion
+    displayName: Datenlöschung bestätigen (Storage, Key Vault, Logs)
+    type: boolean
+    default: false
+
 resources:
   repositories:
     - repository: seed
@@ -29,6 +37,10 @@ extends:
       resourceGroup: ${terraform_state.resource_group}
       storageAccount: ${terraform_state.storage_account}
       container: ${terraform_state.container}
+    confirmDataDeletion: $${{ parameters.confirmDataDeletion }}
+    # Mit sso muss GET /api/me ohne Token mit 401 antworten.
+    smokeTest:
+      protectedPath: api/me
     environments:
 %{ for env in environments ~}
       - name: ${env}

@@ -78,9 +78,14 @@ Azure kennt für Versionen kein „Tage seit Ablösung“; das Alter zählt ab d
 
 Tabellen und Queues haben weder Versionierung noch Soft Delete. Ein Backup gehört nicht zum Modul.
 
-## Vorsicht beim Entfernen
+## Schutz vor dem Löschen
 
-Fällt ein Name aus `tables`, `queues` oder `containers` heraus, löscht der nächste Apply die Tabelle, Queue oder den Container samt Inhalt. Container bleiben `container_soft_delete_days` lang wiederherstellbar, Tabellen und Queues nicht. Die Pipeline zeigt das im Plan und verlangt die Freigabe; vor dem Freigeben auf `destroy` achten. Dasselbe gilt für `features.storage: false`: Dann verschwindet der ganze Account.
+Fällt ein Name aus `tables`, `queues` oder `containers` heraus, würde der nächste Apply die Tabelle, Queue oder den Container samt Inhalt löschen; mit `features.storage: false` den ganzen Account. Container bleiben `container_soft_delete_days` lang wiederherstellbar, Tabellen und Queues nicht. Davor stehen zwei Schichten:
+
+1. **Löschsperre** (`deletion_lock`, Default `true`): `CanNotDelete` auf dem Account. Sie verhindert das Löschen im Portal, per CLI und zusammen mit der Resource Group. Sperren gelten auch für alles unterhalb des Accounts; ein Apply, der eine Tabelle, Queue oder einen Container entfernt, scheitert deshalb an der Sperre. Blobs, Entitäten und Nachrichten (Datenebene) betrifft sie nicht.
+2. **Bestätigung in der Pipeline** (seed-pipelines ab v0.5.0): Ein Plan, der Storage-Ressourcen löscht oder ersetzt, endet vor der Freigabe. Weiter geht es nur mit einem von Hand gestarteten Lauf mit „Datenlöschung bestätigen“. Dieser Lauf setzt `allow_data_deletion = true`; das Modul hebt die Sperre dann auf und entfernt sie vor allem anderen (`depends_on`), danach löscht der Apply die Daten. Der nächste Lauf ohne Bestätigung setzt die Sperre wieder und braucht dafür eine Freigabe.
+
+Sperren setzen und entfernen darf `Contributor` nicht. Die Pipeline-Identität bekommt dafür beim Tenant-Onboarding die Rolle `Sentinel Seed Lock Contributor`, die nur Sperren verwalten darf. Mit `deletion_lock = false` (im Template `storage.deletionLock: false`) entfällt die Sperre, etwa für Wegwerf-Umgebungen; die Bestätigung in der Pipeline bleibt.
 
 ## Queues und Poison-Queue
 

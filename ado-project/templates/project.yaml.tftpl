@@ -60,6 +60,9 @@ storage:
   tables: [jobs]
   queues: [jobs]
   containers: []
+  # Löschsperre auf dem Storage Account (Standard). Löschen von Tabellen, Queues, Containern oder
+  # des Accounts geht dann nur über einen von Hand gestarteten Lauf mit „Datenlöschung bestätigen“.
+  deletionLock: true
   # Gelöschte und überschriebene Blobs bleiben wiederherstellbar, in Tagen (Standard je 7):
   # retention:
   #   versioning: true          # Versionierung (vorherige Versionen)
