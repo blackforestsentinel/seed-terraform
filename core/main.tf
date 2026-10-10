@@ -178,8 +178,8 @@ resource "azurerm_static_web_app" "this" {
   name                = "swa-${local.base}"
   resource_group_name = azurerm_resource_group.this.name
   location            = var.static_web_app_location
-  sku_tier            = "Free"
-  sku_size            = "Free"
+  sku_tier            = var.static_web_app_sku
+  sku_size            = var.static_web_app_sku
   tags                = local.tags
 
   # Der Deploy-Task der Pipeline trägt das Repository ein; das ist kein Drift.

@@ -30,6 +30,17 @@ variable "static_web_app_location" {
   default     = "westeurope"
 }
 
+variable "static_web_app_sku" {
+  description = "Tarif der Static Web App: Free (höchstens 10 je Subscription) oder Standard (kostenpflichtig)."
+  type        = string
+  default     = "Free"
+
+  validation {
+    condition     = contains(["Free", "Standard"], var.static_web_app_sku)
+    error_message = "static_web_app_sku: Free oder Standard."
+  }
+}
+
 variable "runtime_version" {
   description = "Version der dotnet-isolated-Runtime."
   type        = string

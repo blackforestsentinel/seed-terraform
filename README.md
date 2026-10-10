@@ -21,6 +21,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `sso` | App-Registrierungen für API und SPA, delegierte Berechtigung `access_as_user`, SPA vorab autorisiert | Phase 2 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline (für `seed-scaffold`) | Phase 3 |
 
 ### core
 
@@ -39,7 +40,7 @@ provider "azurerm" {
 provider "azapi" {}
 ```
 
-Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`.
+Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free` oder `Standard`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`.
 
 Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `function_identity_principal_id`.
 
