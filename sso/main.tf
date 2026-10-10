@@ -143,7 +143,7 @@ moved {
   to   = azuread_application_pre_authorized.spa[0]
 }
 
-# Bis v0.5.0 ohne count; seitdem kann eine vorhandene Registrierung an ihre Stelle treten.
+# Bis v0.5.0 ohne count; ab v0.6.0 kann eine vorhandene Registrierung an ihre Stelle treten.
 moved {
   from = azuread_application.api
   to   = azuread_application.api[0]

@@ -4,7 +4,7 @@ Terraform-Module für Projekte aus dem [Sentinel-Seed-Template](https://github.c
 
 ```hcl
 module "core" {
-  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//core?ref=v0.5.0"
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//core?ref=v0.6.0"
 
   name        = local.cfg.project
   environment = var.environment
@@ -97,7 +97,7 @@ Ab v0.5.0 legt das Modul die Static Web App per `count` an. Bestehende States ve
 
 Legt zwei App-Registrierungen an (Single Tenant): die API mit der delegierten Berechtigung `access_as_user` und Application ID URI `api://<client-id>`, und die SPA mit den Redirect-URIs des Frontends. Die SPA ist an der API vorab autorisiert, Nutzerinnen und Nutzer sehen also keinen Einwilligungsdialog für die API.
 
-Eigene Domains gehören als `https://<domain>` mit in `spa_redirect_uris`. Ohne Redirect-URIs (Projekt ohne Frontend, `spa_redirect_uris` weglassen oder leer) entsteht nur die API-Registrierung: keine SPA, kein Service Principal dafür, keine Vorab-Autorisierung. Ab v0.5.0 liegen die SPA-Ressourcen deshalb unter `[0]`; `moved`-Blöcke verschieben bestehende States ohne Änderung an den Registrierungen. Seit es die Option für eine vorhandene Registrierung gibt (nach v0.5.0), liegen auch die API-Ressourcen unter `[0]`, ebenfalls per `moved`; der Plan verschiebt dann nur.
+Eigene Domains gehören als `https://<domain>` mit in `spa_redirect_uris`. Ohne Redirect-URIs (Projekt ohne Frontend, `spa_redirect_uris` weglassen oder leer) entsteht nur die API-Registrierung: keine SPA, kein Service Principal dafür, keine Vorab-Autorisierung. Ab v0.5.0 liegen die SPA-Ressourcen deshalb unter `[0]`; `moved`-Blöcke verschieben bestehende States ohne Änderung an den Registrierungen. Ab v0.6.0 liegen auch die API-Ressourcen unter `[0]`, weil eine vorhandene Registrierung an ihre Stelle treten kann; `moved`-Blöcke verschieben bestehende States, der Plan verschiebt dann nur.
 
 ```hcl
 module "sso" {
