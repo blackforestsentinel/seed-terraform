@@ -16,3 +16,24 @@ hosting:
   # Eigene Domains der Static Web App, z. B. [app.example.org]. Die nötigen DNS-Einträge
   # stehen nach dem Apply im Terraform-Output custom_domain_dns_records.
   customDomains: []
+
+# Rollen der API und was sie dürfen, wirksam mit sso. Terraform legt je Rolle eine App-Rolle in
+# Entra an, Personen und Gruppen weist ein Admin dort zu. Die API löst aus den Rollen im Token die
+# Capabilities auf, [RequireCapability] verlangt sie, GET /api/me nennt sie dem Frontend.
+auth:
+  roles:
+    Admin:
+      description: Verwaltet die Anwendung
+      # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
+      memberTypes: [User]
+      capabilities: [settings.manage]
+  # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
+  assignmentRequired: false
+  # Vorhandene App-Registrierung je Umgebung statt neuer, auch aus einem anderen Tenant.
+  # Was der Admin dort einrichtet: README von seed-terraform, Modul sso.
+  # existingRegistration:
+  #   prod:
+  #     tenantId: 00000000-0000-0000-0000-000000000000
+  #     apiClientId: 00000000-0000-0000-0000-000000000000
+  #     spaClientId: 00000000-0000-0000-0000-000000000000
+  #     apiScope: api://00000000-0000-0000-0000-000000000000/access_as_user
