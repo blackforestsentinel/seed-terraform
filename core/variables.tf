@@ -93,6 +93,18 @@ variable "log_retention_days" {
   default     = 30
 }
 
+variable "log_daily_quota_gb" {
+  description = "Tageslimit des Log Analytics Workspace in GB (mindestens 0.023, -1 für kein Limit). Danach nimmt er bis 0 Uhr UTC keine Daten mehr an."
+  type        = number
+  default     = 1
+  nullable    = false
+
+  validation {
+    condition     = var.log_daily_quota_gb == -1 || var.log_daily_quota_gb >= 0.023
+    error_message = "log_daily_quota_gb: mindestens 0.023 GB oder -1 für kein Limit."
+  }
+}
+
 variable "tags" {
   description = "Zusätzliche Tags für alle Ressourcen."
   type        = map(string)

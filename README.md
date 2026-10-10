@@ -17,8 +17,9 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 
 | Modul | Inhalt | Status |
 | --- | --- | --- |
-| `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights mit Log Analytics, Host-Storage mit Managed Identity | Phase 1 |
+| `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients | Phase 2 |
+| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -40,13 +41,27 @@ provider "azurerm" {
 provider "azapi" {}
 ```
 
-Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`.
+Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB).
 
-Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`.
+Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`; für das Modul monitoring `resource_group_id`, `application_insights_id` und `log_analytics_workspace_id`.
 
 Konvention: Das Modul setzt die App-Settings `Seed__Project` und `Seed__Environment`, die `Bfs.Seed.Functions.Core` ausliest.
 
 CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu.
+
+#### Telemetrie ohne Schlüssel
+
+Application Insights nimmt nur Telemetrie mit Entra-Token an (`local_authentication_enabled = false`). Wer den Connection String kennt, kann damit keine Telemetrie einschleusen. Die Function sendet per User-Assigned Managed Identity: Das Modul gibt ihr die Rolle `Monitoring Metrics Publisher` auf Application Insights und setzt `APPLICATIONINSIGHTS_AUTHENTICATION_STRING` (`Authorization=AAD;ClientId=<client-id>`). Diese Einstellung lesen der Functions-Host und im Worker `ConfigureFunctionsApplicationInsights()` aus `Microsoft.Azure.Functions.Worker.ApplicationInsights`, das `AddSeedCore()` aus `Bfs.Seed.Functions.Core` aufruft. Am Code ändert sich dafür nichts.
+
+Der Log Analytics Workspace hat ein Tageslimit (`log_daily_quota_gb`, Default 1 GB, `-1` ohne Limit). Ist es erreicht, nimmt er bis 0 Uhr UTC nichts mehr an; das Modul monitoring meldet das.
+
+Die ausführende Identität vergibt dafür eine weitere Rolle: Die Bedingung an `Role Based Access Control Administrator` muss `Monitoring Metrics Publisher` (`3913510d-42f4-4e42-8a64-420c390055eb`) erlauben.
+
+Umstieg bestehender Projekte (vor dieser Version):
+
+- Der Apply ändert Application Insights und den Workspace an Ort und Stelle; nichts wird neu angelegt, die Daten bleiben.
+- Er legt die Rolle an und setzt das App-Setting. Die Function startet dadurch neu und sendet danach per Managed Identity, Host wie Worker. Ein neuer Deploy oder ein Paket-Update ist nicht nötig; alle bisherigen Versionen von `Bfs.Seed.Functions.Core` bringen `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.50 mit, das die Einstellung auswertet.
+- Terraform schaltet die lokale Authentifizierung ab, bevor die Function das neue App-Setting hat. Telemetrie aus dieser Zeitspanne und dem Neustart geht verloren, im Test rund eine Minute. Danach ist sie vollständig. Wer das vermeiden will, wendet die Änderung in einer ruhigen Zeit an.
 
 #### Eigene Domains
 
@@ -186,6 +201,28 @@ Mit `existing_registration` legt das Modul für MCP nichts an: Scope `mcp_access
 
 Ausgaben: `mcp_client_id` (in Claude „OAuth Client ID“, in Claude Code `--client-id`), `mcp_resource` (MCP-Adresse auf der eigenen Domain, sonst `null`), `mcp_scope`. Mit `mcp = false` entsteht nichts davon, und bestehende Projekte sehen nach einem Update des Moduls keine Änderung. Abschalten entfernt Registrierung, Vorautorisierungen, URI und Scope; Entra verlangt, dass der Scope vorher deaktiviert wird, das erledigt der Provider.
 
+### monitoring
+
+Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Details, Kosten und Entscheidungen in [monitoring/README.md](monitoring/README.md).
+
+```hcl
+module "monitoring" {
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
+  count  = length(local.alert_emails) > 0 ? 1 : 0
+
+  name                       = local.cfg.project
+  environment                = var.environment
+  resource_group_name        = module.core.resource_group_name
+  resource_group_id          = module.core.resource_group_id
+  location                   = module.core.location
+  application_insights_id    = module.core.application_insights_id
+  log_analytics_workspace_id = module.core.log_analytics_workspace_id
+  alert_emails               = local.alert_emails
+  health_check_url           = "${module.core.function_app_url}/api/health"
+  budget_amount              = 20
+}
+```
+
 ## Entwickeln
 
 ```bash
@@ -202,6 +239,8 @@ terraform -chdir=examples/sso-existing init -backend=false
 terraform -chdir=examples/sso-existing validate
 terraform -chdir=examples/mcp init -backend=false
 terraform -chdir=examples/mcp validate
+terraform -chdir=examples/monitoring init -backend=false
+terraform -chdir=examples/monitoring validate
 ```
 
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
