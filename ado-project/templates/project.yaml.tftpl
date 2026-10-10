@@ -4,8 +4,13 @@ project: ${name}
 features:
   # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend
   sso: ${features.sso}
-  # Storage Account (Table, Blob) mit Managed-Identity-Zugriff (geplant)
-  storage: false
+  # MCP-Server unter /api/mcp für Claude, VS Code und andere KI-Werkzeuge, setzt sso voraus
+  mcp: ${features.mcp}
+  # Eigener Storage Account (Table, Blob, Queue) mit Managed-Identity-Zugriff, Einstellungen
+  # unter storage: (unten)
+  storage: ${features.storage}
+  # Key Vault für Secrets von Drittanbietern (API-Keys, Passwörter); Namen unter keyVault
+  keyVault: false
   # Custom Connector für die Power Platform, setzt sso voraus (Phase 4)
   customConnector: false
 
@@ -16,3 +21,57 @@ hosting:
   # Eigene Domains der Static Web App, z. B. [app.example.org]. Die nötigen DNS-Einträge
   # stehen nach dem Apply im Terraform-Output custom_domain_dns_records.
   customDomains: []
+
+# Rollen der API und was sie dürfen, wirksam mit sso. Terraform legt je Rolle eine App-Rolle in
+# Entra an, Personen und Gruppen weist ein Admin dort zu. Die API löst aus den Rollen im Token die
+# Capabilities auf, [RequireCapability] verlangt sie, GET /api/me nennt sie dem Frontend.
+auth:
+  roles:
+    Admin:
+      description: Verwaltet die Anwendung
+      # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
+      memberTypes: [User]
+      capabilities: [settings.manage, status.read]
+  # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
+  assignmentRequired: false
+  # Vorhandene App-Registrierung je Umgebung statt neuer, auch aus einem anderen Tenant.
+  # Was der Admin dort einrichtet: README von seed-terraform, Modul sso.
+  # existingRegistration:
+  #   prod:
+  #     tenantId: 00000000-0000-0000-0000-000000000000
+  #     apiClientId: 00000000-0000-0000-0000-000000000000
+  #     spaClientId: 00000000-0000-0000-0000-000000000000
+  #     apiScope: api://00000000-0000-0000-0000-000000000000/access_as_user
+
+# Nur mit features.keyVault. Terraform legt je Secret einen Platzhalter an; den Wert setzt ein
+# Mensch per CLI oder Portal (README, „Secret setzen“). Die Function liest stripe-key als
+# App-Setting Secrets__StripeKey. Beispiel:
+#   secrets: [stripe-key, smtp-password]
+#   secretOfficers: [00000000-0000-0000-0000-000000000000]   # Object-IDs von Personen oder Gruppen
+keyVault:
+  # Namen in Kleinbuchstaben, Wörter durch Bindestriche getrennt
+  secrets: []
+  # Wer Werte setzen darf (Key Vault Secrets Officer auf dem Vault)
+  secretOfficers: []
+
+# Nur mit features.storage: Terraform legt Tabellen, Queues und Container an. Das Beispiel in
+# api/Api/Jobs nutzt die Tabelle jobs und die Queue jobs.
+storage:
+  tables: [jobs]
+  queues: [jobs]
+  containers: []
+  # Löschsperre auf dem Storage Account (Standard). Löschen von Tabellen, Queues, Containern oder
+  # des Accounts geht dann nur über einen von Hand gestarteten Lauf mit „Datenlöschung bestätigen“.
+  deletionLock: true
+  # Gelöschte und überschriebene Blobs bleiben wiederherstellbar, in Tagen (Standard je 7):
+  # retention:
+  #   versioning: true          # Versionierung (vorherige Versionen)
+  #   versionDays: 7            # vorherige Versionen löschen nach (Tage ab Entstehung)
+  #   softDeleteDays: 7         # gelöschte Blobs und Versionen
+  #   containerSoftDeleteDays: 7
+  # Lifecycle-Regeln für Blobs, z. B. Löschfristen; Präfixe beginnen mit dem Container:
+  # lifecycle:
+  #   - name: uploads-90-tage
+  #     prefixes: [uploads/]
+  #     coolAfterDays: 30       # optional: nach 30 Tagen ohne Änderung in den Tarif Cool
+  #     deleteAfterDays: 90     # nach 90 Tagen ohne Änderung löschen

@@ -16,7 +16,9 @@ variable "name" {
 variable "features" {
   description = "Feature-Auswahl für project.yaml."
   type = object({
-    sso = optional(bool, false)
+    sso     = optional(bool, false)
+    mcp     = optional(bool, false)
+    storage = optional(bool, false)
   })
   default = {}
 }
@@ -64,6 +66,12 @@ variable "terraform_state" {
   })
 }
 
+variable "pr_validation" {
+  description = "Branch-Policy auf main: Pull Requests brauchen einen erfolgreichen PR-Lauf der Pipeline (Build, Tests, Secret-Scan). Pflicht, sperrt damit direkte Pushes auf main. Braucht die Berechtigung \"Edit policies\" am Repo."
+  type        = bool
+  default     = true
+}
+
 variable "authorize_service_connections" {
   description = "Pipeline für beide Service Connections berechtigen. Braucht die Administrator-Rolle an den Service Connections; seed-scaffold lässt das aus, dort gibt ein Admin beim ersten Lauf frei."
   type        = bool
@@ -79,5 +87,5 @@ variable "template_url" {
 variable "pipelines_version" {
   description = "Tag von seed-pipelines, den das Projekt einbindet."
   type        = string
-  default     = "v0.4.0"
+  default     = "v0.5.0"
 }
