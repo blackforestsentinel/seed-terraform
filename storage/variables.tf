@@ -61,6 +61,20 @@ variable "queues" {
   }
 }
 
+variable "deletion_lock" {
+  description = "Löschsperre (CanNotDelete) auf dem Storage Account. Sie verhindert das Löschen im Portal, per CLI und mit der Resource Group und wirkt auch auf Tabellen, Queues und Container: Ein Apply, der eine davon entfernt, scheitert. Für gewolltes Löschen setzt die Pipeline allow_data_deletion (Bestätigung im Lauf)."
+  type        = bool
+  default     = true
+  nullable    = false
+}
+
+variable "allow_data_deletion" {
+  description = "Löschsperre für diesen Lauf aufheben, damit ein bestätigter Plan Daten löschen kann. Setzt die Pipeline nur bei confirmDataDeletion (TF_VAR_allow_data_deletion); der nächste Lauf ohne Bestätigung setzt die Sperre wieder."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "replication_type" {
   description = "Replikation des Storage Accounts: LRS (Standard), ZRS, GRS, GZRS, RAGRS oder RAGZRS."
   type        = string

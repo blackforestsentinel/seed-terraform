@@ -145,6 +145,29 @@ resource "azurerm_storage_management_policy" "this" {
   }
 }
 
+# --- Löschsperre ----------------------------------------------------------------
+
+# Sperren erbt alles unterhalb des Accounts: Mit Sperre scheitert auch das Löschen einer
+# Tabelle, Queue oder eines Containers per Terraform. depends_on auf alles im Modul sorgt dafür,
+# dass Terraform die Sperre beim Abbau zuerst entfernt (allow_data_deletion) und erst danach
+# die Daten löscht. Datenebene (Blobs, Entitäten, Nachrichten) betrifft die Sperre nicht.
+resource "azurerm_management_lock" "this" {
+  count = var.deletion_lock && !var.allow_data_deletion ? 1 : 0
+
+  name       = "seed-deletion-lock"
+  scope      = azurerm_storage_account.this.id
+  lock_level = "CanNotDelete"
+  notes      = "Sentinel Seed: schützt die Daten von ${local.base}. Gewolltes Löschen nur über einen bestätigten Pipeline-Lauf (Datenlöschung bestätigen)."
+
+  depends_on = [
+    azurerm_storage_table.this,
+    azurerm_storage_container.this,
+    azurerm_storage_queue.this,
+    azurerm_storage_management_policy.this,
+    azurerm_role_assignment.function,
+  ]
+}
+
 # --- Rollen der Function --------------------------------------------------------
 
 resource "azurerm_role_assignment" "function" {
