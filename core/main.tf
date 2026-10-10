@@ -143,6 +143,7 @@ resource "azapi_resource" "function_app" {
 
       siteConfig = {
         minTlsVersion = "1.2"
+        ftpsState     = "Disabled"
         cors = {
           allowedOrigins     = concat(["https://${azurerm_static_web_app.this.default_host_name}"], var.cors_allowed_origins)
           supportCredentials = false
@@ -180,4 +181,24 @@ resource "azurerm_static_web_app" "this" {
   sku_tier            = "Free"
   sku_size            = "Free"
   tags                = local.tags
+
+  # Der Deploy-Task der Pipeline trägt das Repository ein; das ist kein Drift.
+  lifecycle {
+    ignore_changes = [repository_branch, repository_url]
+  }
+}
+
+# Basic Auth (Benutzername/Passwort) für SCM und FTP ausdrücklich aus, unabhängig vom
+# Azure-Default. Deployments laufen über Entra ID.
+resource "azapi_update_resource" "basic_auth_off" {
+  for_each = toset(["scm", "ftp"])
+
+  type      = "Microsoft.Web/sites/basicPublishingCredentialsPolicies@2024-11-01"
+  name      = each.value
+  parent_id = azapi_resource.function_app.id
+  body = {
+    properties = {
+      allow = false
+    }
+  }
 }
