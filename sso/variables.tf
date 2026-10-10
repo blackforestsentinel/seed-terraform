@@ -30,3 +30,14 @@ variable "additional_owners" {
   type        = list(string)
   default     = []
 }
+
+variable "spa_redirect_bridge_path" {
+  description = "Pfad der Bridge-Seite für die stille Anmeldung im iframe (MSAL 5), z. B. /redirect.html. Das Modul trägt sie je Origin der spa_redirect_uris als Redirect-URI ein und nennt sie in frontend_config als redirectBridgePath. null: keine Bridge-Seite, seed-web-auth erneuert dann per Umleitung."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.spa_redirect_bridge_path == null || can(regex("^/[^?#]+$", var.spa_redirect_bridge_path))
+    error_message = "spa_redirect_bridge_path: Pfad mit führendem Schrägstrich, z. B. /redirect.html."
+  }
+}
