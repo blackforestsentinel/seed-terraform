@@ -176,8 +176,12 @@ resource "azapi_resource" "function_app" {
           )
           supportCredentials = false
         }
+        # Die Grundeinstellungen stehen zuletzt und gehen damit vor: Ein gleichnamiges Setting aus
+        # app_settings, etwa aus project.yaml eines Projekts, kann Host-Storage, Telemetrie und
+        # Identität nicht verbiegen.
         appSettings = [
           for k, v in merge(
+            var.app_settings,
             {
               AzureWebJobsStorage__accountName      = azurerm_storage_account.host.name
               AzureWebJobsStorage__credential       = "managedidentity"
@@ -190,7 +194,6 @@ resource "azapi_resource" "function_app" {
               # ConfigureFunctionsApplicationInsights(), auch der Worker.
               APPLICATIONINSIGHTS_AUTHENTICATION_STRING = "Authorization=AAD;ClientId=${azurerm_user_assigned_identity.function.client_id}"
             },
-            var.app_settings,
           ) : { name = k, value = v }
         ]
       }
