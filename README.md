@@ -21,7 +21,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant | Phase 2 |
 | `storage` | Storage Account mit RBAC für die Function | geplant |
 | `connector` | App-Registrierung für den Custom Connector | geplant |
-| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
 ### core
 
@@ -148,6 +148,14 @@ Was der Admin im anderen Tenant einrichtet:
 3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
 4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
 5. **Zuweisungen** von Personen und Gruppen zu den Rollen, bei Bedarf „Zuweisung erforderlich“ an der Enterprise App der API.
+
+### ado-project
+
+Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines).
+
+PR-Validierung (`pr_validation`, Standard `true`): eine Branch-Policy auf `main`, nach der Pull Requests einen erfolgreichen Lauf der Projekt-Pipeline brauchen. Die Pipeline erkennt PR-Läufe selbst und baut, testet und sucht dann nur nach Secrets, ohne Deploy und ohne Service Connection; eine zweite Pipeline-Definition ist nicht nötig. Ein Ergebnis gilt 12 Stunden, auch wenn sich `main` ändert. Die Policy ist Pflicht und sperrt damit direkte Pushes auf `main`; sie entsteht deshalb erst nach den Dateien, die das Modul direkt auf `main` schreibt.
+
+Voraussetzungen: `pipelines_version` ab v0.5.0, denn ältere Versionen von seed-pipelines deployen auch in PR-Läufen (das Modul bricht dann mit einer Meldung ab). Die anlegende Identität braucht am Repo die Berechtigung „Edit policies“; beim PAT von `seed-scaffold` genügt dafür der Scope Code (Read, write & manage).
 
 ## Entwickeln
 
