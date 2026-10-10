@@ -26,6 +26,7 @@ module "core" {
   name                 = "example"
   environment          = "dev"
   cors_allowed_origins = ["http://localhost:5173"]
+  custom_domains       = ["app.example.org"]
 }
 
 output "function_app_url" {
@@ -34,4 +35,8 @@ output "function_app_url" {
 
 output "static_web_app_url" {
   value = module.core.static_web_app_url
+}
+
+output "custom_domain_dns_records" {
+  value = module.core.custom_domain_dns_records
 }

@@ -9,12 +9,13 @@ variable "environment" {
 }
 
 variable "spa_redirect_uris" {
-  description = "Redirect-URIs des Frontends: URL der Static Web App, in dev zusätzlich http://localhost:5173. Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich; das Frontend meldet sich mit window.location.origin + \"/\" an."
+  description = "Redirect-URIs des Frontends: URL der Static Web App, eigene Domains, in dev zusätzlich http://localhost:5173. Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich; das Frontend meldet sich mit window.location.origin + \"/\" an. Leer bei Projekten ohne Frontend: Dann entsteht nur die API-Registrierung."
   type        = list(string)
+  default     = []
 
   validation {
-    condition     = length(var.spa_redirect_uris) > 0 && alltrue([for uri in var.spa_redirect_uris : can(regex("^(https://|http://localhost)", uri))])
-    error_message = "spa_redirect_uris: mindestens eine URI, jeweils https:// oder http://localhost."
+    condition     = alltrue([for uri in var.spa_redirect_uris : can(regex("^(https://|http://localhost)", uri))])
+    error_message = "spa_redirect_uris: jeweils https:// oder http://localhost."
   }
 }
 

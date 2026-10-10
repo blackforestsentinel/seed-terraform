@@ -31,13 +31,29 @@ variable "static_web_app_location" {
 }
 
 variable "static_web_app_sku" {
-  description = "Tarif der Static Web App: Free (höchstens 10 je Subscription) oder Standard (kostenpflichtig)."
+  description = "Tarif der Static Web App: Free (höchstens 10 je Subscription), Standard (kostenpflichtig) oder None (Projekt ohne Frontend, nur API)."
   type        = string
   default     = "Free"
 
   validation {
-    condition     = contains(["Free", "Standard"], var.static_web_app_sku)
-    error_message = "static_web_app_sku: Free oder Standard."
+    condition     = contains(["Free", "Standard", "None"], var.static_web_app_sku)
+    error_message = "static_web_app_sku: Free, Standard oder None."
+  }
+}
+
+variable "custom_domains" {
+  description = "Eigene Domains der Static Web App als Hostnamen, z. B. [\"app.example.org\"] oder eine Apex-Domain wie example.org. Free erlaubt 2, Standard 5 Domains. Welche DNS-Einträge nötig sind, steht im Output custom_domain_dns_records."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = alltrue([for d in var.custom_domains : can(regex("^([a-z0-9]([a-z0-9-]*[a-z0-9])?[.])+[a-z][a-z0-9-]*[a-z0-9]$", d))])
+    error_message = "custom_domains: Hostnamen in Kleinbuchstaben ohne Schema, Port und Pfad, z. B. app.example.org."
+  }
+
+  validation {
+    condition     = var.static_web_app_sku != "None" || length(var.custom_domains) == 0
+    error_message = "custom_domains: Ohne Static Web App (static_web_app_sku = None) gibt es keine eigenen Domains."
   }
 }
 
@@ -66,7 +82,7 @@ variable "app_settings" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Zusätzliche CORS-Origins. Die URL der Static Web App ist immer freigegeben."
+  description = "Zusätzliche CORS-Origins. Die URL der Static Web App und die eigenen Domains sind immer freigegeben."
   type        = list(string)
   default     = []
 }
