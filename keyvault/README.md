@@ -59,7 +59,7 @@ Zwei Namen, die sich nur durch Bindestriche unterscheiden (`stripe-key`, `stripe
 Braucht der Code ein anderes Setting, etwa beim Umzug eines bestehenden Projekts, liefert der Output `references` die Referenz je Secret-Name:
 
 ```hcl
-app_settings = { Ffh__Weclapp__Token = module.keyvault[0].references["weclapp-token"] }
+app_settings = { Legacy__ApiToken = module.keyvault[0].references["legacy-api-token"] }
 ```
 
 `Bfs.Seed.Functions.Core` prüft beim Start alle App-Settings, nicht nur `Secrets__*`.
