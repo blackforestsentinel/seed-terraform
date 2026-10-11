@@ -50,7 +50,7 @@ output "app_settings" {
 
 # Ohne SPA bleibt die Map leer; config.json bekommt dann keinen Auth-Teil.
 output "frontend_config" {
-  description = "Auth-Teil der Laufzeitkonfiguration des Frontends (config.json), passend zu @blackforestsentinel/seed-web-auth. Leer ohne Frontend."
+  description = "Auth-Teil der Laufzeitkonfiguration des Frontends (config.json), passend zu @blackforestsentinel/seed-web-auth; mit directory zusätzlich directory für @blackforestsentinel/seed-web-people. Leer ohne Frontend."
   value = {
     for key in local.spa_client ? ["auth"] : [] : key => merge(
       {
@@ -59,6 +59,7 @@ output "frontend_config" {
         apiScope = local.api_scope
       },
       var.spa_redirect_bridge_path == null ? {} : { redirectBridgePath = var.spa_redirect_bridge_path },
+      local.directory_frontend_config,
     )
   }
 }
