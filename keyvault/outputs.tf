@@ -14,7 +14,7 @@ output "key_vault_uri" {
 }
 
 output "references" {
-  description = "Key-Vault-Referenz je Secret-Name, für App-Settings mit eigenem Namen (z. B. Ffh__Weclapp__Token)."
+  description = "Key-Vault-Referenz je Secret-Name, für App-Settings mit eigenem Namen (z. B. Legacy__ApiToken)."
   value       = local.references
 }
 
