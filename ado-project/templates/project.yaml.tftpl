@@ -28,12 +28,22 @@ hosting:
 auth:
   roles:
     Admin:
+      # Anzeigename in Entra und im Frontend (GET /api/me, roleDetails); ohne Angabe der Rollenname
+      displayName: Administrator
       description: Verwaltet die Anwendung
       # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
       memberTypes: [User]
       capabilities: [settings.manage, status.read]
   # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
   assignmentRequired: false
+  # Personen-Komponenten im Frontend (seed-web-people): Profilbilder, Personensuche und
+  # Teams-Status kommen mit dem Token der angemeldeten Person direkt aus Microsoft Graph.
+  # Terraform trägt die Berechtigungen an der App-Registrierung des Frontends ein, zustimmen muss
+  # ein Admin einmal je Umgebung (README, „Personen und Profilbilder“).
+  # directory:
+  #   enabled: true       # Fotos, Profile, Suche: User.Read, User.ReadBasic.All, People.Read
+  #   presence: true      # Teams-Status: Presence.Read.All
+  #   roleFilter: false   # Auswahl nur mit App-Rolle: Application.Read.All, GroupMember.Read.All (Admin-Consent!)
   # Vorhandene App-Registrierung je Umgebung statt neuer, auch aus einem anderen Tenant.
   # Was der Admin dort einrichtet: README von seed-terraform, Modul sso.
   # existingRegistration:
@@ -94,3 +104,5 @@ storage:
 #       Beispiel__Mocks: "true"
 #   prod:
 #     maxInstances: 4
+#     auth:
+#       directory: { enabled: false }   # überschreibt einzelne Schalter aus auth.directory
