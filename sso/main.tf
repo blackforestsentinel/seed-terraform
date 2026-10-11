@@ -108,6 +108,25 @@ resource "azuread_application" "spa" {
       type = "Scope"
     }
   }
+
+  # Mit directory die delegierten Graph-Berechtigungen für die Personen-Komponenten
+  # (directory.tf). Die Zustimmung erteilt ein Admin von Hand.
+  dynamic "required_resource_access" {
+    for_each = local.directory ? [local.msgraph_app_id] : []
+
+    content {
+      resource_app_id = required_resource_access.value
+
+      dynamic "resource_access" {
+        for_each = local.directory_scope_names
+
+        content {
+          id   = local.msgraph_directory_scopes[resource_access.value].id
+          type = "Scope"
+        }
+      }
+    }
+  }
 }
 
 resource "azuread_service_principal" "spa" {

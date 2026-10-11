@@ -1,4 +1,5 @@
-# Beispiel: core mit sso, so wie ein Projekt mit features.sso = true sie verbindet.
+# Beispiel: core mit sso, so wie ein Projekt mit features.sso = true sie verbindet, dazu die
+# Personen-Komponenten im Frontend (auth.directory) mit Teams-Status.
 
 terraform {
   required_providers {
@@ -32,6 +33,12 @@ module "sso" {
   name              = "example"
   environment       = "dev"
   spa_redirect_uris = [module.core.static_web_app_url, "http://localhost:5173"]
+
+  # Delegierte Graph-Berechtigungen an der SPA; die Zustimmung erteilt ein Admin von Hand.
+  directory = {
+    enabled  = true
+    presence = true
+  }
 }
 
 module "core" {
@@ -45,4 +52,9 @@ module "core" {
 
 output "frontend_config" {
   value = merge({ apiBaseUrl = module.core.function_app_url }, module.sso.frontend_config)
+}
+
+# Was ein Admin nach dem Apply freigibt („Administratorzustimmung erteilen“).
+output "directory_permissions" {
+  value = module.sso.directory_permissions
 }

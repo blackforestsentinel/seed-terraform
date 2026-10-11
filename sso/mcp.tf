@@ -74,9 +74,9 @@ locals {
     Mcp__Resource = local.mcp_resource
   }
 
-  # Microsoft Graph und dessen delegierte Berechtigung offline_access (feste IDs in allen Tenants).
-  # Mit Application.ReadWrite.OwnedBy darf die Pipeline den Service Principal von Graph nicht
-  # zwingend lesen; deshalb keine Datenquelle.
+  # Microsoft Graph und dessen delegierte Berechtigung offline_access (feste IDs in allen Tenants);
+  # msgraph_app_id gilt auch für directory.tf. Mit Application.ReadWrite.OwnedBy darf die Pipeline
+  # den Service Principal von Graph nicht zwingend lesen; deshalb keine Datenquelle.
   msgraph_app_id         = "00000003-0000-0000-c000-000000000000"
   msgraph_offline_access = "7427e0e9-2fba-42fe-b0c0-848c9e6a8182"
 }
