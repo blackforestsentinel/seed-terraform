@@ -43,6 +43,7 @@ module "sso" {
   app_roles = {
     Admin = { description = "Verwaltet die Anwendung" }
   }
+  directory = { enabled = true }
 }
 
 module "core" {
@@ -64,4 +65,8 @@ output "spa_redirect_uris" {
 
 output "app_roles" {
   value = module.sso.app_roles
+}
+
+output "directory_permissions" {
+  value = module.sso.directory_permissions
 }

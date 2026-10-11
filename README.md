@@ -18,7 +18,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | Modul | Inhalt | Status |
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
-| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients | Phase 2 |
+| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
@@ -117,7 +117,7 @@ module "core" {
 
 Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `Application.ReadWrite.OwnedBy` mit Admin-Consent. Sie trägt sich selbst als Besitzerin der App-Registrierungen ein und darf nur diese verwalten.
 
-Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris` und `app_roles`.
+Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris`, `app_roles` und `directory_permissions`.
 
 #### App-Rollen und Zuweisung
 
@@ -166,6 +166,55 @@ Was der Admin im anderen Tenant einrichtet:
 3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
 4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
 5. **Zuweisungen** von Personen und Gruppen zu den Rollen, bei Bedarf „Zuweisung erforderlich“ an der Enterprise App der API.
+6. **Mit `directory`:** die Graph-Berechtigungen an der SPA-Registrierung und die Zustimmung, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
+
+#### Personen und Profilbilder (Microsoft Graph)
+
+Für die Personen-Komponenten aus `@blackforestsentinel/seed-web-people` (im Template `auth.directory`): Profilbilder, Profile, Personensuche und Teams-Status lädt das Frontend mit dem Token der angemeldeten Person direkt aus Microsoft Graph. Die API ist nicht beteiligt, es gibt keine Anwendungsberechtigung und keinen Token-Tausch.
+
+```hcl
+module "sso" {
+  # ...
+  directory = {
+    enabled     = true  # Fotos, Profile, Suche
+    presence    = true  # Teams-Status
+    role_filter = false # Personenauswahl nur mit App-Rolle, braucht Administratorzustimmung
+  }
+}
+```
+
+Das Modul trägt an der SPA-Registrierung `<name>-<umgebung>-web` delegierte Berechtigungen für Microsoft Graph ein und schreibt die Scopes als `directory` in `frontend_config.auth`. `enabled` ist der Hauptschalter: `presence` und `role_filter` wirken nur mit ihm, `enabled = false` schaltet alles ab, etwa je Umgebung.
+
+```json
+"directory": {
+  "scopes": ["https://graph.microsoft.com/User.Read", "https://graph.microsoft.com/User.ReadBasic.All", "https://graph.microsoft.com/People.Read", "https://graph.microsoft.com/Presence.Read.All"],
+  "presence": true,
+  "roleFilter": false,
+  "apiClientId": "<Client-ID der API-Registrierung>"
+}
+```
+
+| Schalter | Berechtigung | ID | Wofür | Typ |
+| --- | --- | --- | --- | --- |
+| `enabled` | `User.Read` | `e1fe6dd8-ba31-4d61-89e7-88639da4683d` | eigenes Profil und Foto | User |
+| `enabled` | `User.ReadBasic.All` | `b340eb25-3456-403f-be2f-af7a0d370277` | andere Personen, ihre Fotos, Suche im Verzeichnis | User |
+| `enabled` | `People.Read` | `ba47897c-39ec-4d83-8086-ee8256fa737d` | relevante Personen als erste Vorschläge | User |
+| `presence` | `Presence.Read.All` | `9c7a330d-35b3-4aa1-963d-cb2b9f927841` | Teams-Status | User |
+| `role_filter` | `Application.Read.All` | `c79f8feb-a9db-4090-85f9-90d820caa0eb` | wer der Enterprise App der API zugewiesen ist (`apiClientId`) | Admin |
+| `role_filter` | `GroupMember.Read.All` | `bc024368-1153-4739-b217-4326f2e966d0` | Mitglieder zugewiesener Gruppen | Admin |
+
+Die IDs sind in allen Tenants gleich; das Modul nutzt sie fest wie bei `offline_access` in `mcp.tf`, weil die Pipeline mit `Application.ReadWrite.OwnedBy` den Service Principal von Graph nicht zwingend lesen darf. Delegiert heißt: Das Frontend sieht nur, was die angemeldete Person auch in Outlook und Teams sieht, und die Einstellungen des Tenants (etwa ausgeblendete Fotos) gelten weiter.
+
+**Zustimmung, von Hand:** Das Modul erteilt keine Einwilligung; die Pipeline-Identität könnte das nur mit `DelegatedPermissionGrant.ReadWrite.All`. Nach dem Apply gibt es zwei Wege:
+
+- **Administratorzustimmung (empfohlen):** Entra Admin Center → App-Registrierungen → `<name>-<umgebung>-web` → API-Berechtigungen → „Administratorzustimmung für &lt;Tenant&gt; erteilen“, oder `az ad app permission admin-consent --id <spa_client_id>` als Admin. Einmal je Registrierung, also je Projekt und Umgebung; sie gilt für alle Personen. Mit `role_filter` ist sie Pflicht, weil die beiden Berechtigungen vom Typ Admin sind.
+- **Personen stimmen selbst zu:** Berechtigungen vom Typ User dürfen Personen beim ersten Aufruf selbst erteilen, aber nur, soweit die Einwilligungseinstellungen des Tenants es zulassen (Unternehmensanwendungen → Einwilligung und Berechtigungen). Mit der von Microsoft empfohlenen Einstellung gilt das nur für Berechtigungen, die als „geringes Risiko“ eingestuft sind, oft nur `openid`, `profile`, `email`, `offline_access` und `User.Read`. `User.ReadBasic.All`, `People.Read` und `Presence.Read.All` brauchen dann trotzdem die Administratorzustimmung, oder der Admin stuft sie unter „Berechtigungsklassifizierungen“ als geringes Risiko ein; das gilt dann für alle Apps im Tenant.
+
+Eine Zustimmung deckt die Berechtigungen ab, die beim Klick eingetragen waren. Kommt `presence` oder `role_filter` später dazu, erneut zustimmen. Abschalten entfernt die Berechtigungen aus der Registrierung; eine erteilte Zustimmung bleibt bestehen, bis ein Admin sie an der Enterprise App unter „Berechtigungen“ widerruft.
+
+**Mit `existing_registration`** legt das Modul nichts an; `frontend_config` bekommt `directory` trotzdem, `apiClientId` ist dann `api_client_id`. Der Admin des anderen Tenants trägt an seiner SPA-Registrierung (`spa_client_id`, bei einer gemeinsamen Registrierung für SPA und API dieselbe) unter API-Berechtigungen → Berechtigung hinzufügen → Microsoft Graph → Delegierte Berechtigungen die Berechtigungen aus der Tabelle ein und erteilt die Administratorzustimmung wie oben. Die Ausgabe `directory_permissions` nennt Tenant, Client-ID, Berechtigungen mit ID und den Befehl.
+
+Ausgabe `directory_permissions`: `tenant_id`, `spa_client_id`, `permissions` (je Berechtigung `value`, `id` und `admin_consent`), `admin_consent_required` (mit `role_filter`) und `admin_consent_command`; `null` ohne `directory` oder ohne Frontend. Ohne `directory` ändert sich an Registrierungen und Ausgaben nichts.
 
 ### ado-project
 
