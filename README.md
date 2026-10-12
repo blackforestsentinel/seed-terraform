@@ -18,11 +18,10 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | Modul | Inhalt | Status |
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
-| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
+| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
-| `connector` | App-Registrierung für den Custom Connector | geplant |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
 ### core
@@ -253,6 +252,27 @@ Mit `existing_registration` legt das Modul für MCP nichts an: Scope `mcp_access
 
 Ausgaben: `mcp_client_id` (in Claude „OAuth Client ID“, in Claude Code `--client-id`), `mcp_resource` (MCP-Adresse auf der eigenen Domain, sonst `null`), `mcp_scope`. Mit `mcp = false` entsteht nichts davon, und bestehende Projekte sehen nach einem Update des Moduls keine Änderung. Abschalten entfernt Registrierung, Vorautorisierungen, URI und Scope; Entra verlangt, dass der Scope vorher deaktiviert wird, das erledigt der Provider.
 
+#### Custom Connector
+
+Für einen Custom Connector der Power Platform (im Template `features.customConnector`, Pipeline-Schritt in seed-pipelines):
+
+```hcl
+module "sso" {
+  # ...
+  connector = true
+}
+```
+
+| Was | Warum |
+| --- | --- |
+| Registrierung `<name>-<umgebung>-connector` | Client, mit dem sich der Connector im Namen der angemeldeten Person anmeldet. Single-tenant, weil die Managed Identity des Connectors nur damit funktioniert. Kein Secret. |
+| Vorautorisierung für `access_as_user` | Dieselbe Berechtigung wie das Frontend, ohne Einwilligungsdialog. Was eine Person über den Connector erreicht, regeln wie im Browser App-Rollen und Capabilities. |
+| Pipeline als Besitzerin | Die Pipeline trägt nach dem Anlegen des Connectors die Redirect-URI (Plattform „Web“) und einen Federated Credential für die Managed Identity des Connectors ein; dafür reicht `Application.ReadWrite.OwnedBy`. Terraform ignoriert die Redirect-URIs (`ignore_changes`), Federated Credentials verwaltet es ohnehin nicht. |
+
+**Warum Redirect-URI und Federated Credential nicht hier:** Beide enthalten einen Schlüssel, den die Power Platform aus Anzeigename, Publisher-Präfix und einer Endung der Power-Platform-Umgebung bildet. Die Endung steht in keinen Metadaten der Umgebung, erst der angelegte Connector kennt sie.
+
+Mit `existing_registration` legt das Modul keinen Connector-Client an; der Admin richtet ihn im anderen Tenant von Hand ein, ein `check` weist im Plan darauf hin. Ausgabe: `connector_client_id`. Mit `connector = false` entsteht nichts, bestehende Projekte sehen nach einem Update keine Änderung.
+
 ### monitoring
 
 Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Details, Kosten und Entscheidungen in [monitoring/README.md](monitoring/README.md).
@@ -313,6 +333,8 @@ terraform -chdir=examples/sso-existing init -backend=false
 terraform -chdir=examples/sso-existing validate
 terraform -chdir=examples/mcp init -backend=false
 terraform -chdir=examples/mcp validate
+terraform -chdir=examples/custom-connector init -backend=false
+terraform -chdir=examples/custom-connector validate
 terraform -chdir=examples/monitoring init -backend=false
 terraform -chdir=examples/monitoring validate
 terraform -chdir=examples/keyvault init -backend=false
