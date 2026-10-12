@@ -335,3 +335,59 @@ run "ungueltige_rollen" {
 
   expect_failures = [var.app_roles]
 }
+
+run "connector_aus_wie_bisher" {
+  assert {
+    condition     = length(azuread_application.connector) == 0 && length(azuread_application_pre_authorized.connector) == 0 && output.connector_client_id == null
+    error_message = "Ohne connector keine Client-Registrierung und keine Vorautorisierung."
+  }
+}
+
+run "connector_an" {
+  variables {
+    connector = true
+  }
+
+  assert {
+    condition     = azuread_application.connector[0].display_name == "example-dev-connector" && azuread_application.connector[0].sign_in_audience == "AzureADMyOrg"
+    error_message = "Die Client-Registrierung heißt <name>-<umgebung>-connector und ist single-tenant (Voraussetzung für die Managed Identity des Connectors)."
+  }
+
+  assert {
+    condition = (
+      [for r in azuread_application.connector[0].required_resource_access : r.resource_app_id] == ["33333333-3333-3333-3333-333333333333"] &&
+      azuread_application_pre_authorized.connector[0].permission_ids == toset([for s in azuread_application.api[0].api[0].oauth2_permission_scope : s.id if s.value == "access_as_user"])
+    )
+    error_message = "Der Connector fordert nur die eigene API an und ist für deren delegierte Berechtigung vorautorisiert."
+  }
+
+  assert {
+    condition     = output.connector_client_id == "33333333-3333-3333-3333-333333333333"
+    error_message = "connector_client_id nennt die Client-ID der Registrierung."
+  }
+
+  assert {
+    condition     = output.app_settings == run.ohne_neue_einstellungen_wie_bisher.app_settings
+    error_message = "connector ändert die App-Settings der Function nicht."
+  }
+}
+
+run "connector_mit_vorhandener_registrierung" {
+  command = plan
+
+  variables {
+    connector = true
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
+  }
+
+  assert {
+    condition     = length(azuread_application.connector) == 0 && output.connector_client_id == null
+    error_message = "Mit existing_registration legt das Modul keinen Connector-Client an."
+  }
+
+  expect_failures = [check.connector_existing_registration]
+}
