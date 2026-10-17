@@ -53,6 +53,9 @@ auth:
   #     apiClientId: 00000000-0000-0000-0000-000000000000
   #     spaClientId: 00000000-0000-0000-0000-000000000000
   #     apiScope: api://00000000-0000-0000-0000-000000000000/access_as_user
+  # Weitere Redirect-URIs der SPA ohne Bridge-Seite, etwa für eine Browser-Erweiterung (README,
+  # „Browser-Erweiterungen“); meist je Umgebung:
+  # extraRedirectUris: [https://<erweiterungs-id>.chromiumapp.org/]
 
 # Nur mit features.keyVault. Terraform legt je Secret einen Platzhalter an; den Wert setzt ein
 # Mensch per CLI oder Portal (README, „Secret setzen“). Die Function liest stripe-key als
@@ -107,3 +110,4 @@ storage:
 #     maxInstances: 4
 #     auth:
 #       directory: { enabled: false }   # überschreibt einzelne Schalter aus auth.directory
+#       extraRedirectUris: [https://<erweiterungs-id>.chromiumapp.org/]   # ersetzt auth.extraRedirectUris

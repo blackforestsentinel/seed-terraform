@@ -141,6 +141,19 @@ Personen und Gruppen weist ein Admin in Entra zu (Enterprise App `<projekt>-<umg
 
 MSAL 5 empfängt die Antwort der stillen Anmeldung im iframe nur über eine eigene Seite, die `broadcastResponseToMainFrame` aufruft. Mit `spa_redirect_bridge_path = "/redirect.html"` trägt das Modul je Origin der `spa_redirect_uris` die Redirect-URI `<origin>/redirect.html` ein und schreibt `redirectBridgePath` in `frontend_config`. Ohne die Variable bleibt alles wie bisher; `seed-web-auth` erneuert die Sitzung dann per Umleitung statt im iframe.
 
+#### Weitere Redirect-URIs, etwa für eine Browser-Erweiterung
+
+Sonderfall: Eine Browser-Erweiterung (Manifest V3) als weiterer Client derselben API meldet sich per `chrome.identity.launchWebAuthFlow` mit der Redirect-URI `https://<erweiterungs-id>.chromiumapp.org/` an. Sie gehört an die SPA-Registrierung, damit Entra ID die Einlösung des Codes mit `Origin: chrome-extension://<erweiterungs-id>` annimmt:
+
+```hcl
+module "sso" {
+  # ...
+  spa_extra_redirect_uris = ["https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/"]
+}
+```
+
+Das Modul übernimmt diese URIs ohne Bridge-Seite und ergänzt ohne Pfad den abschließenden Schrägstrich. Erlaubt ist nur `https://`; unter `chromiumapp.org` muss vor der Domain eine Erweiterungs-ID stehen (32 Zeichen `a` bis `p`). Auch ohne `spa_redirect_uris` entsteht damit die SPA-Registrierung, `frontend_config` dann ohne `redirectBridgePath`. Entpackte Erweiterung und Store-Version haben verschiedene IDs, die URI ist also meist je Umgebung verschieden. Die CORS-Freigabe für `chrome-extension://<erweiterungs-id>` an der Function kommt über `cors_allowed_origins` im Modul `core`. Ohne die Variable bleibt alles wie bisher.
+
 #### Vorhandene App-Registrierung, auch aus einem anderen Tenant
 
 ```hcl
@@ -160,7 +173,7 @@ Dann legt das Modul nichts an und braucht keine Graph-Rechte im fremden Tenant. 
 
 Was der Admin im anderen Tenant einrichtet:
 
-1. **SPA-Registrierung** (Plattform „Single-Page-Anwendung“) mit den Redirect-URIs aus der Ausgabe `spa_redirect_uris`: URL der Static Web App mit abschließendem Schrägstrich, eigene Domains, mit Bridge-Seite zusätzlich `<origin>/redirect.html` je Origin, in `dev` `http://localhost:5173/`. Die URL der Static Web App steht erst nach dem ersten Apply fest.
+1. **SPA-Registrierung** (Plattform „Single-Page-Anwendung“) mit den Redirect-URIs aus der Ausgabe `spa_redirect_uris`: URL der Static Web App mit abschließendem Schrägstrich, eigene Domains, mit Bridge-Seite zusätzlich `<origin>/redirect.html` je Origin, in `dev` `http://localhost:5173/`, dazu `spa_extra_redirect_uris`. Die URL der Static Web App steht erst nach dem ersten Apply fest.
 2. **API-Registrierung** mit Application ID URI (`audience`) und einer delegierten Berechtigung (`api_scope`).
 3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
 4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.

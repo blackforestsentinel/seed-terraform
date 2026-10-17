@@ -29,8 +29,8 @@ output "spa_client_id" {
 }
 
 output "spa_redirect_uris" {
-  description = "Redirect-URIs der SPA samt Bridge-Seite; bei existing_registration die URIs, die der Admin im anderen Tenant einträgt."
-  value       = local.spa ? concat(local.spa_redirect_uris, local.spa_bridge_uris) : []
+  description = "Redirect-URIs der SPA samt Bridge-Seite und spa_extra_redirect_uris; bei existing_registration die URIs, die der Admin im anderen Tenant einträgt."
+  value       = local.spa ? local.spa_all_redirect_uris : []
 }
 
 output "app_settings" {
@@ -58,7 +58,9 @@ output "frontend_config" {
         tenantId = local.tenant_id
         apiScope = local.api_scope
       },
-      var.spa_redirect_bridge_path == null ? {} : { redirectBridgePath = var.spa_redirect_bridge_path },
+      # Nur mit Bridge-URIs, nicht für eine SPA allein aus spa_extra_redirect_uris. Aus den
+      # Variablen statt aus spa_bridge_uris, damit schon beim Plan bekannt.
+      var.spa_redirect_bridge_path == null || length(var.spa_redirect_uris) == 0 ? {} : { redirectBridgePath = var.spa_redirect_bridge_path },
       local.directory_frontend_config,
     )
   }
