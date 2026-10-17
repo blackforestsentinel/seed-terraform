@@ -165,6 +165,7 @@ resource "azurerm_management_lock" "this" {
     azurerm_storage_queue.this,
     azurerm_storage_management_policy.this,
     azurerm_role_assignment.function,
+    azurerm_role_assignment.extension_publisher,
   ]
 }
 
@@ -177,4 +178,18 @@ resource "azurerm_role_assignment" "function" {
   role_definition_name = each.value
   principal_id         = var.function_identity_principal_id
   principal_type       = "ServicePrincipal"
+}
+
+# --- Veröffentlichen einer Browser-Erweiterung ------------------------------------
+
+# Die Pipeline (seed-pipelines, extension.signing) legt signierte Pakete und current.json in den
+# Container extension; Bfs.Seed.Extension liefert sie mit den Rollen der Function aus. Die
+# veröffentlichende Identität schreibt nur in diesen Container, nicht in die übrigen Daten. Ohne
+# principal_type: Meist ist es die Deployment-Identität, bei einem Apply von Hand eine Person.
+resource "azurerm_role_assignment" "extension_publisher" {
+  count = var.extension_publisher_principal_id != null && contains(var.containers, "extension") ? 1 : 0
+
+  scope                = azurerm_storage_container.this["extension"].id
+  role_definition_name = "Storage Blob Data Contributor"
+  principal_id         = var.extension_publisher_principal_id
 }
