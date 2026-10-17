@@ -9,7 +9,7 @@ variable "environment" {
 }
 
 variable "spa_redirect_uris" {
-  description = "Redirect-URIs des Frontends: URL der Static Web App, eigene Domains, in dev zusätzlich http://localhost:5173. Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich; das Frontend meldet sich mit window.location.origin + \"/\" an. Leer bei Projekten ohne Frontend: Dann entsteht nur die API-Registrierung."
+  description = "Redirect-URIs des Frontends: URL der Static Web App, eigene Domains, in dev zusätzlich http://localhost:5173. Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich; das Frontend meldet sich mit window.location.origin + \"/\" an. Leer bei Projekten ohne Frontend: Dann entsteht nur die API-Registrierung, außer mit spa_extra_redirect_uris."
   type        = list(string)
   default     = []
 
@@ -39,5 +39,25 @@ variable "spa_redirect_bridge_path" {
   validation {
     condition     = var.spa_redirect_bridge_path == null || can(regex("^/[^?#]+$", var.spa_redirect_bridge_path))
     error_message = "spa_redirect_bridge_path: Pfad mit führendem Schrägstrich, z. B. /redirect.html."
+  }
+}
+
+variable "spa_extra_redirect_uris" {
+  description = "Weitere Redirect-URIs der SPA-Registrierung, die das Modul ohne Bridge-Seite übernimmt, z. B. https://<erweiterungs-id>.chromiumapp.org/ für eine Browser-Erweiterung (chrome.identity.launchWebAuthFlow). Ohne Pfad ergänzt das Modul den abschließenden Schrägstrich. Damit entsteht die SPA-Registrierung auch ohne spa_redirect_uris."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for uri in var.spa_extra_redirect_uris : can(regex("^https://", uri))])
+    error_message = "spa_extra_redirect_uris: jeweils https://."
+  }
+
+  validation {
+    condition = alltrue([
+      for uri in var.spa_extra_redirect_uris : can(regex("^https://[a-p]{32}\\.chromiumapp\\.org(/|$)", uri))
+      if can(regex("^https://([^/:?#]*\\.)?chromiumapp\\.org([/:?#]|$)", lower(uri)))
+    ])
+    error_message = "spa_extra_redirect_uris: Unter chromiumapp.org steht vor der Domain die ID der Browser-Erweiterung, 32 Kleinbuchstaben von a bis p, z. B. https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/."
   }
 }

@@ -9,15 +9,21 @@ locals {
 
   # Entra ID verlangt bei URIs ohne Pfad einen abschließenden Schrägstrich
   # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.
-  spa_redirect_uris = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
+  spa_redirect_uris       = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
+  spa_extra_redirect_uris = [for uri in var.spa_extra_redirect_uris : can(regex("^https://[^/]+$", uri)) ? "${uri}/" : uri]
 
   # Bridge-Seite für die stille Anmeldung im iframe (MSAL 5), je Origin eine Redirect-URI.
   spa_bridge_uris = var.spa_redirect_bridge_path == null ? [] : distinct([
     for uri in local.spa_redirect_uris : "${regex("^https?://[^/]+", uri)}${var.spa_redirect_bridge_path}"
   ])
 
-  # Ohne Redirect-URIs (Projekt ohne Frontend) entsteht nur die API-Registrierung.
-  spa = length(var.spa_redirect_uris) > 0
+  # Alle Redirect-URIs der SPA-Registrierung; die weiteren (etwa einer Browser-Erweiterung) ohne
+  # Bridge-Seite.
+  spa_all_redirect_uris = distinct(concat(local.spa_redirect_uris, local.spa_bridge_uris, local.spa_extra_redirect_uris))
+
+  # Ohne Redirect-URIs (Projekt ohne Frontend und ohne weitere Clients) entsteht nur die
+  # API-Registrierung.
+  spa = length(var.spa_redirect_uris) > 0 || length(var.spa_extra_redirect_uris) > 0
 
   # Stabile ID der delegierten Berechtigung, eindeutig je Projekt und Umgebung.
   scope_id = uuidv5("url", "https://github.com/blackforestsentinel/seed-terraform/sso/${local.base}/${var.scope_name}")
@@ -97,7 +103,7 @@ resource "azuread_application" "spa" {
   owners           = local.owners
 
   single_page_application {
-    redirect_uris = concat(local.spa_redirect_uris, local.spa_bridge_uris)
+    redirect_uris = local.spa_all_redirect_uris
   }
 
   required_resource_access {

@@ -44,6 +44,11 @@ run "ohne_neue_einstellungen_wie_bisher" {
   }
 
   assert {
+    condition     = output.spa_redirect_uris == tolist(["https://app.example.org/", "http://localhost:5173/"])
+    error_message = "Die Ausgabe spa_redirect_uris bleibt ohne neue Einstellungen unverändert."
+  }
+
+  assert {
     condition     = length(azuread_application_app_role.api) == 0 && azuread_service_principal.api[0].app_role_assignment_required == false
     error_message = "Ohne app_roles keine Rollen und keine Zuweisungspflicht."
   }
@@ -256,6 +261,96 @@ run "rollen_bridge_und_zuweisung" {
   assert {
     condition     = azuread_service_principal.api[0].app_role_assignment_required
     error_message = "assignment_required setzt die Zuweisungspflicht am Service Principal der API."
+  }
+}
+
+run "weitere_redirect_uris_ohne_bridge" {
+  variables {
+    spa_redirect_bridge_path = "/redirect.html"
+    spa_extra_redirect_uris  = ["https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/", "https://app.example.org/"]
+  }
+
+  assert {
+    condition = azuread_application.spa[0].single_page_application[0].redirect_uris == toset([
+      "https://app.example.org/", "http://localhost:5173/",
+      "https://app.example.org/redirect.html", "http://localhost:5173/redirect.html",
+      "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/",
+    ])
+    error_message = "Die weiteren URIs kommen ohne Bridge-Seite dazu."
+  }
+
+  assert {
+    condition = output.spa_redirect_uris == tolist([
+      "https://app.example.org/", "http://localhost:5173/",
+      "https://app.example.org/redirect.html", "http://localhost:5173/redirect.html",
+      "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/",
+    ])
+    error_message = "spa_redirect_uris nennt die weiteren URIs nach den übrigen, ohne Doppelte."
+  }
+
+  assert {
+    condition     = output.frontend_config.auth.redirectBridgePath == "/redirect.html"
+    error_message = "Mit Frontend nennt frontend_config die Bridge-Seite weiter."
+  }
+}
+
+run "nur_weitere_redirect_uris" {
+  variables {
+    spa_redirect_uris        = []
+    spa_redirect_bridge_path = "/redirect.html"
+    spa_extra_redirect_uris  = ["https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org"]
+  }
+
+  assert {
+    condition     = azuread_application.spa[0].single_page_application[0].redirect_uris == toset(["https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/"])
+    error_message = "Auch ohne Frontend entsteht die SPA-Registrierung; ohne Pfad kommt der abschließende Schrägstrich dazu."
+  }
+
+  assert {
+    condition     = length(azuread_service_principal.spa) == 1 && length(azuread_application_pre_authorized.spa) == 1
+    error_message = "Die SPA ist wie mit Frontend an der API vorab autorisiert."
+  }
+
+  assert {
+    condition     = keys(output.frontend_config.auth) == ["apiScope", "clientId", "tenantId"] && output.frontend_config.auth.clientId == "33333333-3333-3333-3333-333333333333"
+    error_message = "frontend_config.auth ohne redirectBridgePath, weil es keine Bridge-URIs gibt."
+  }
+}
+
+run "weitere_redirect_uris_nur_https" {
+  command = plan
+
+  variables {
+    spa_extra_redirect_uris = ["http://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/"]
+  }
+
+  expect_failures = [var.spa_extra_redirect_uris]
+}
+
+run "weitere_redirect_uris_falsche_erweiterungs_id" {
+  command = plan
+
+  variables {
+    spa_extra_redirect_uris = ["https://abcdefghijklmnopabcdefghijklmnoq.chromiumapp.org/"]
+  }
+
+  expect_failures = [var.spa_extra_redirect_uris]
+}
+
+run "weitere_redirect_uris_mit_vorhandener_registrierung" {
+  variables {
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      spa_client_id = "66666666-6666-6666-6666-666666666666"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
+    spa_extra_redirect_uris = ["https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/"]
+  }
+
+  assert {
+    condition     = length(azuread_application.spa) == 0 && contains(output.spa_redirect_uris, "https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/")
+    error_message = "Mit existing_registration nennt spa_redirect_uris dem Admin auch die weiteren URIs."
   }
 }
 
