@@ -45,6 +45,7 @@ module "keyvault" {
   function_identity_principal_id = module.core.function_identity_principal_id
   secrets                        = ["stripe-key", "smtp-password"]
   secret_officers                = ["00000000-0000-0000-0000-000000000000"]
+  audit_logs                     = { workspace_id = module.core.log_analytics_workspace_id }
 }
 
 output "key_vault_name" {
