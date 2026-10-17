@@ -28,6 +28,17 @@ variable "function_identity_client_id" {
   type        = string
 }
 
+variable "extension_publisher_principal_id" {
+  description = "Object-ID der Identität, die eine selbst gehostete Browser-Erweiterung veröffentlicht, meist die Deployment-Identität (data.azurerm_client_config.current.object_id). Steht extension in containers, bekommt sie Storage Blob Data Contributor nur auf diesem Container (seed-pipelines, extension.signing); sonst und mit null nichts."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.extension_publisher_principal_id == null || can(regex("^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$", var.extension_publisher_principal_id))
+    error_message = "extension_publisher_principal_id: Object-ID (GUID) oder null."
+  }
+}
+
 variable "tables" {
   description = "Tabellen, z. B. [\"jobs\"]. Buchstaben und Ziffern, 3-63 Zeichen, beginnt mit einem Buchstaben."
   type        = list(string)
