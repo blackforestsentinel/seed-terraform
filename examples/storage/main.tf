@@ -20,6 +20,10 @@ provider "azurerm" {
 
 provider "azapi" {}
 
+# Identität, mit der Terraform läuft, in der Pipeline die Deployment-Identität. Sie veröffentlicht
+# die Browser-Erweiterung in den Container extension (seed-pipelines, extension.signing).
+data "azurerm_client_config" "current" {}
+
 module "core" {
   source = "../../core"
 
@@ -41,7 +45,9 @@ module "storage" {
 
   tables     = ["jobs"]
   queues     = ["jobs"]
-  containers = ["uploads"]
+  containers = ["uploads", "extension"]
+
+  extension_publisher_principal_id = data.azurerm_client_config.current.object_id
 
   lifecycle_rules = [
     {

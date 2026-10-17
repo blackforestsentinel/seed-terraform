@@ -50,6 +50,26 @@ Die User-Assigned Managed Identity der Function bekommt auf dem Account:
 
 Die Bedingung der Pipeline-Identität aus dem Tenant-Onboarding erlaubt genau die Storage-Datenrollen; das Modul braucht keine weiteren Rechte. Rollen wirken erst nach einigen Minuten. Der Output `app_settings` hängt deshalb an den Rollen: Die Function bekommt die Verbindung erst, wenn die Rollen vergeben sind.
 
+## Browser-Erweiterung veröffentlichen
+
+Liefert das Projekt eine Browser-Erweiterung selbst aus (seed-pipelines, `extension.signing`; Paket `Bfs.Seed.Extension`), legt der Deploy signierte Pakete und `current.json` in den Container `extension`. Die Identität, die das tut, bekommt mit `extension_publisher_principal_id` die Rolle `Storage Blob Data Contributor` nur auf diesem Container, nicht auf dem Account:
+
+```hcl
+data "azurerm_client_config" "current" {}
+
+module "storage" {
+  # ...
+  containers                       = ["uploads", "extension"]
+  extension_publisher_principal_id = data.azurerm_client_config.current.object_id
+}
+```
+
+- Die Rolle entsteht nur, wenn `extension` in `containers` steht. Ohne den Container oder mit `null` (Standard) ändert sich nichts.
+- Im Template übergibt `infra/storage.tf` die Identität, mit der Terraform läuft: in der Pipeline die Deployment-Identität der Umgebung, also dieselbe, mit der der Deploy veröffentlicht. Die Bedingung aus dem Tenant-Onboarding erlaubt ihr, diese Rolle zu vergeben.
+- Die Function liest die Pakete mit ihren Datenrollen auf dem Account; für sie ändert sich nichts.
+- Wie jede neue Rolle wirkt sie erst nach einigen Minuten. Der Deploy wiederholt das erste Hochladen so lange.
+- Wechselt die Identität (andere Service Connection), ersetzt Terraform die Zuweisung. Die alte liegt unter der Löschsperre des Accounts; sie zu entfernen braucht deshalb wie bei Containern einen Lauf mit „Datenlöschung bestätigen“.
+
 ## Verbindung `SeedStorage`
 
 Der Output `app_settings` beschreibt eine identitätsbasierte Verbindung im Format der Functions-Erweiterungen:
@@ -94,3 +114,7 @@ Die Poison-Queue `<name>-poison` legt der Functions-Host selbst an, wenn eine Na
 ## Ausgaben
 
 `app_settings`, `connection_name` (`SeedStorage`), `storage_account_name`, `storage_account_id`, `blob_endpoint`, `queue_endpoint`, `table_endpoint`.
+
+## Tests
+
+`terraform -chdir=storage test` (nach `terraform -chdir=storage init -backend=false`) prüft die Rolle für die Browser-Erweiterung gegen einen Mock des Providers, ohne Subscription.
