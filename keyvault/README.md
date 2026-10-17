@@ -14,6 +14,7 @@ module "keyvault" {
   function_identity_principal_id = module.core.function_identity_principal_id
   secrets                        = ["stripe-key", "smtp-password"]
   secret_officers                = [] # Object-IDs von Personen oder Gruppen
+  audit_logs                     = { workspace_id = module.core.log_analytics_workspace_id }
 }
 
 module "core" {
@@ -31,6 +32,7 @@ module "core" {
 | Rolle Key Vault Secrets User | UAMI der Function, nur auf diesem Vault | Auflösen der Referenzen |
 | Rolle Key Vault Secrets Officer | `secret_officers`, nur auf diesem Vault | Werte setzen; Owner und Contributor dürfen das bei einem RBAC-Vault nicht |
 | Secret je Name in `secrets` | Wert `seed-placeholder:<name>` | Die Referenz löst sich sofort auf, `Bfs.Seed.Functions.Core` erkennt den Platzhalter |
+| Diagnoseeinstellung `seed-audit` | nur mit `audit_logs`: Kategoriegruppe `audit` in den Log Analytics Workspace | Nachvollziehen, wer wann ein Secret gelesen, gesetzt oder gelöscht hat (`AzureDiagnostics`, Kategorie `AuditEvent`) |
 
 Der Name des Vaults ist stabil: `kv-` plus höchstens 14 Zeichen aus `<projekt>-<umgebung>` plus dasselbe Kürzel wie in `core` (aus Subscription, Projekt und Umgebung). So bleibt er unter 24 Zeichen, global eindeutig und ohne doppelte Bindestriche.
 

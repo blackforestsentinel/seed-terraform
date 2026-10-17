@@ -41,10 +41,14 @@ resource "azuread_application" "api" {
   api {
     requested_access_token_version = 2
 
+    # Zustimmen dürfen nur Admins. Die eigenen Clients (SPA, Custom Connector) sind vorautorisiert
+    # und brauchen keine Zustimmung; eine fremde App bekäme sonst über die Einwilligung einer
+    # einzelnen Person Tokens für die ganze API in deren Namen. mcp_access bleibt vom Typ User
+    # (mcp.tf, README: Keine Allowlist der Clients).
     oauth2_permission_scope {
       id                         = local.scope_id
       value                      = var.scope_name
-      type                       = "User"
+      type                       = "Admin"
       enabled                    = true
       admin_consent_display_name = "Zugriff auf ${local.base}"
       admin_consent_description  = "Erlaubt der Anwendung, im Namen der angemeldeten Person auf die API von ${local.base} zuzugreifen."
