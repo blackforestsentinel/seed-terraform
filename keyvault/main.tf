@@ -75,6 +75,23 @@ resource "azurerm_role_assignment" "secret_officers" {
   principal_id         = each.value
 }
 
+# --- Audit-Log ----------------------------------------------------------------
+
+# Jeder Zugriff auf Secrets und jede Änderung am Vault landet im Workspace (Tabelle
+# AzureDiagnostics, Kategorie AuditEvent). Die Menge ist klein: Die Plattform liest die
+# Referenzen beim Start und danach etwa einmal am Tag.
+resource "azurerm_monitor_diagnostic_setting" "audit" {
+  count = var.audit_logs == null ? 0 : 1
+
+  name                       = "seed-audit"
+  target_resource_id         = azurerm_key_vault.this.id
+  log_analytics_workspace_id = var.audit_logs.workspace_id
+
+  enabled_log {
+    category_group = "audit"
+  }
+}
+
 # --- Platzhalter --------------------------------------------------------------
 
 # Über Azure Resource Manager statt über die Datenebene: Dafür reicht Contributor, die Pipeline

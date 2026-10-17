@@ -66,6 +66,14 @@ variable "soft_delete_retention_days" {
   }
 }
 
+variable "audit_logs" {
+  description = "Audit-Log des Vaults (Kategoriegruppe audit: wer wann welches Secret gelesen, gesetzt oder gelöscht hat) in diesen Log Analytics Workspace, z. B. { workspace_id = module.core.log_analytics_workspace_id }. Null: kein Audit-Log. Ein Objekt statt einer ID, damit der Plan auch dann weiß, ob es das Log gibt, wenn der Workspace erst im selben Apply entsteht."
+  type = object({
+    workspace_id = string
+  })
+  default = null
+}
+
 variable "tags" {
   description = "Zusätzliche Tags für den Vault."
   type        = map(string)
