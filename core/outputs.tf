@@ -56,7 +56,7 @@ output "custom_domain_dns_records" {
 }
 
 output "application_insights_id" {
-  description = "ID von Application Insights, für Alarme und Webtests im Modul monitoring."
+  description = "ID von Application Insights, für die Alarme im Modul monitoring."
   value       = azurerm_application_insights.this.id
 }
 
