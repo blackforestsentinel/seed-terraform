@@ -19,7 +19,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
-| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check per Webtest, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
+| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -308,6 +308,8 @@ module "monitoring" {
 }
 ```
 
+Bis v0.12.0 rief ein Webtest den Health-Endpunkt alle 15 Minuten aus zwei Standorten auf. Seit v0.13.0 übernimmt das eine Logic App, standardmäßig alle 4 Stunden (`health_check_interval_hours`); `health_check_frequency` und `health_check_locations` entfallen. Beim Umstieg entfernt der Apply den Webtest und ersetzt den Alarm `alert-…-health` durch `alert-…-health-check`.
+
 ### storage
 
 Eigener Storage Account für die Daten des Projekts, getrennt vom Host-Storage aus `core`: ohne Shared Key, TLS 1.2, ohne öffentlichen Blob-Zugriff; Tabellen, Queues und Container aus `project.yaml`; Versionierung und Soft Delete als Standard, Lifecycle-Regeln für Löschfristen. Die Managed Identity der Function bekommt Blob, Queue und Table Data Contributor; optional bekommt eine weitere Identität (`extension_publisher_principal_id`, meist die Deployment-Identität) Blob Data Contributor nur auf dem Container `extension`, für eine selbst gehostete Browser-Erweiterung. Der Output `app_settings` beschreibt die identitätsbasierte Verbindung `SeedStorage` (Endpunkte, `credential = managedidentity`, Client-ID), die Queue-Trigger und `Bfs.Seed.Storage` nutzen.
@@ -361,6 +363,8 @@ Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Prov
 ```bash
 terraform -chdir=sso init -backend=false
 terraform -chdir=sso test
+terraform -chdir=monitoring init -backend=false
+terraform -chdir=monitoring test
 terraform -chdir=storage init -backend=false
 terraform -chdir=storage test
 ```

@@ -3,9 +3,13 @@ locals {
 
   health_check = var.health_check_url != null
 
-  # Fenster über mindestens zwei Läufe je Standort; bei einem einzigen Lauf im Fenster hinge
-  # es vom Takt ab, ob ein Standort darin überhaupt ein Ergebnis hat.
-  health_window = { 300 = "PT15M", 600 = "PT30M", 900 = "PT30M" }[var.health_check_frequency]
+  # Das Fenster des Alarms ist länger als der Abstand der Läufe. Scheitern zwei Läufe
+  # nacheinander, liegen beide im Fenster, und der Alarm bleibt bestehen; bei einem kürzeren
+  # Fenster käme zwischen zwei Läufen eine Entwarnung, obwohl die App noch nicht antwortet.
+  health_window = (
+    var.health_check_interval_hours < 6 ? "PT6H" :
+    var.health_check_interval_hours < 12 ? "PT12H" : "P1D"
+  )
 
   tags = merge(
     {
@@ -79,54 +83,65 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "exceptions" {
 
 # --- Health-Check ---------------------------------------------------------------
 
-# Ein Webtest von außen statt des Health-Checks von App Service: Flex Consumption fährt auf
+# Ein Aufruf von außen statt des Health-Checks von App Service: Flex Consumption fährt auf
 # null Instanzen herunter, dann gibt es nichts, was eine Instanz prüfen könnte. Ein Alarm auf
 # fehlende Requests scheidet aus demselben Grund aus, eine ruhige App ist keine kaputte.
-resource "azurerm_application_insights_standard_web_test" "health" {
+#
+# Eine Logic App statt eines Webtests von Application Insights: Webtests laufen höchstens alle
+# 15 Minuten. Jeder Aufruf startet nach einer Ruhephase eine Instanz, zehrt am Freikontingent
+# der Function und schreibt die Startmeldungen des Hosts in die Logs.
+resource "azurerm_logic_app_workflow" "health" {
   count = local.health_check ? 1 : 0
 
-  name                    = "webtest-${local.base}-health"
-  resource_group_name     = var.resource_group_name
-  location                = var.location
-  application_insights_id = var.application_insights_id
-  description             = "Ruft den Health-Endpunkt ohne Token auf und erwartet 200."
-  geo_locations           = var.health_check_locations
-  frequency               = var.health_check_frequency
-  # Nach einer Ruhephase startet der erste Aufruf eine Instanz; 30 Sekunden (Default) wären
-  # dafür knapp. Mit retry_enabled zählt ein Lauf erst nach drei Fehlversuchen als Ausfall.
-  timeout       = 60
-  retry_enabled = true
-  enabled       = true
-  tags          = local.tags
-
-  request {
-    url                              = var.health_check_url
-    follow_redirects_enabled         = false
-    parse_dependent_requests_enabled = false
-  }
-
-  validation_rules {
-    expected_status_code = 200
-  }
+  name                = "logic-${local.base}-health"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  tags                = local.tags
 }
 
+# Ohne Startzeit läuft der erste Durchgang gleich nach dem Anlegen.
+resource "azurerm_logic_app_trigger_recurrence" "health" {
+  count = local.health_check ? 1 : 0
+
+  name         = "zeitplan"
+  logic_app_id = azurerm_logic_app_workflow.health[0].id
+  frequency    = "Hour"
+  interval     = var.health_check_interval_hours
+}
+
+# Ohne Token. Antwortet der Endpunkt nicht mit 2xx, scheitert der Lauf. Die Standard-Wiederholung
+# der Logic App (bei Zeitüberschreitung, 408, 429 und 5xx bis zu vier Wiederholungen in wachsendem
+# Abstand, Timeout je Versuch zwei Minuten) überbrückt den Kaltstart und kurze Störungen.
+resource "azurerm_logic_app_action_http" "health" {
+  count = local.health_check ? 1 : 0
+
+  name         = "health"
+  logic_app_id = azurerm_logic_app_workflow.health[0].id
+  method       = "GET"
+  uri          = var.health_check_url
+}
+
+# Bis v0.12.0 hieß der Alarm alert-…-health und hing am Webtest. Azure wandelt einen solchen
+# Alarm nicht in einen Metrik-Alarm um; der neue Name lässt Terraform ihn ersetzen.
 resource "azurerm_monitor_metric_alert" "health" {
   count = local.health_check ? 1 : 0
 
-  name                = "alert-${local.base}-health"
+  name                = "alert-${local.base}-health-check"
   resource_group_name = var.resource_group_name
-  description         = "Der Health-Endpunkt antwortet von keinem Prüfstandort mit 200: ${var.health_check_url}"
+  description         = "Der Health-Endpunkt hat auch nach mehreren Versuchen nicht erfolgreich geantwortet: ${var.health_check_url}. Details im Ausführungsverlauf der Logic App logic-${local.base}-health."
   severity            = 1
-  scopes              = [azurerm_application_insights_standard_web_test.health[0].id, var.application_insights_id]
-  frequency           = "PT5M"
+  scopes              = [azurerm_logic_app_workflow.health[0].id]
+  frequency           = "PT15M"
   window_size         = local.health_window
   auto_mitigate       = true
   tags                = local.tags
 
-  application_insights_web_test_location_availability_criteria {
-    web_test_id           = azurerm_application_insights_standard_web_test.health[0].id
-    component_id          = var.application_insights_id
-    failed_location_count = length(var.health_check_locations)
+  criteria {
+    metric_namespace = "Microsoft.Logic/workflows"
+    metric_name      = "RunsFailed"
+    aggregation      = "Total"
+    operator         = "GreaterThan"
+    threshold        = 0
   }
 
   action {

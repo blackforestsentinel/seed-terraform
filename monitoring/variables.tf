@@ -9,7 +9,7 @@ variable "environment" {
 }
 
 variable "resource_group_name" {
-  description = "Resource Group des Projekts (Output resource_group_name von core). Aktionsgruppe, Alarme und Webtest liegen darin."
+  description = "Resource Group des Projekts (Output resource_group_name von core). Aktionsgruppe, Alarme und Logic App des Health-Checks liegen darin."
   type        = string
 }
 
@@ -19,7 +19,7 @@ variable "resource_group_id" {
 }
 
 variable "location" {
-  description = "Region von Application Insights (Output location von core). Abfrage-Alarme und Webtest liegen in derselben Region."
+  description = "Region von Application Insights (Output location von core). Abfrage-Alarme und Logic App liegen in derselben Region."
   type        = string
 }
 
@@ -58,32 +58,20 @@ variable "exception_threshold" {
 }
 
 variable "health_check_url" {
-  description = "URL, die der Webtest ohne Token abruft und die mit 200 antworten muss, z. B. \"$${module.core.function_app_url}/api/health\". null: kein Webtest, kein Health-Alarm."
+  description = "URL, die der Health-Check ohne Token abruft und die mit 2xx antworten muss, z. B. \"$${module.core.function_app_url}/api/health\". null: kein Health-Check, kein Health-Alarm."
   type        = string
   default     = null
 }
 
-variable "health_check_frequency" {
-  description = "Abstand der Webtest-Läufe in Sekunden: 300, 600 oder 900. Jeder Lauf kostet je Standort rund 0,0006 Euro."
+variable "health_check_interval_hours" {
+  description = "Abstand der Health-Checks in Stunden, 1 bis 12. Jeder Aufruf startet die Function nach einer Ruhephase und schreibt deren Startmeldungen in die Logs."
   type        = number
-  default     = 900
+  default     = 4
   nullable    = false
 
   validation {
-    condition     = contains([300, 600, 900], var.health_check_frequency)
-    error_message = "health_check_frequency: 300, 600 oder 900."
-  }
-}
-
-variable "health_check_locations" {
-  description = "Standorte des Webtests. Der Alarm kommt erst, wenn alle ausfallen; eine Störung an einem Standort allein ist kein Ausfall der App."
-  type        = list(string)
-  default     = ["emea-nl-ams-azr", "emea-gb-db3-azr"]
-  nullable    = false
-
-  validation {
-    condition     = length(var.health_check_locations) > 0
-    error_message = "health_check_locations: mindestens ein Standort."
+    condition     = floor(var.health_check_interval_hours) == var.health_check_interval_hours && var.health_check_interval_hours >= 1 && var.health_check_interval_hours <= 12
+    error_message = "health_check_interval_hours: ganze Stunden von 1 bis 12."
   }
 }
 
