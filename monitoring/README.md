@@ -29,19 +29,21 @@ Im Template steuert der Abschnitt `monitoring:` in `project.yaml` die Eingaben.
 | --- | --- |
 | Aktionsgruppe `ag-<projekt>-<umgebung>` | Eine E-Mail je Empfänger im gemeinsamen Alarmschema. Alle Alarme und das Budget melden über diese Gruppe. Azure schickt jeder neuen Adresse einmal eine Mail, dass sie hinzugefügt wurde. |
 | Alarm `alert-…-exceptions` | Abfrage auf Application Insights alle 15 Minuten über die letzte Stunde; meldet, sobald es `exception_threshold` (Default 5) Exceptions gab. Jede Exception zählt einmal, ob unbehandelt oder per `LogError` geloggt. Schweregrad 2. |
-| Webtest `webtest-…-health` und Alarm `alert-…-health` | Standard-Webtest auf `health_check_url` (ohne Token, erwartet 200, 60 Sekunden Timeout, Wiederholung bei Fehlschlag) aus zwei EU-Standorten. Der Alarm kommt, wenn alle Standorte ausfallen. Schweregrad 1. Entfällt mit `health_check_url = null`. |
+| Logic App `logic-…-health` und Alarm `alert-…-health-check` | Die Logic App ruft `health_check_url` alle `health_check_interval_hours` Stunden (Default 4) ohne Token auf. Bei Zeitüberschreitung, 408, 429 und 5xx wiederholt sie den Aufruf viermal; antwortet der Endpunkt auch dann nicht mit 2xx, scheitert der Lauf. Der Alarm prüft alle 15 Minuten, ob ein Lauf gescheitert ist. Schweregrad 1. Entfällt mit `health_check_url = null`. |
 | Alarm `alert-…-daily-cap` | Meldet, wenn der Log Analytics Workspace sein Tageslimit (`core`: `log_daily_quota_gb`) erreicht hat. Bis 0 Uhr UTC kommt dann keine Telemetrie mehr an, und die übrigen Alarme bleiben still. Schweregrad 2. |
 | Budget `budget-<projekt>-<umgebung>` | Monatsbudget der ganzen Resource Group in der Abrechnungswährung. Warnung bei 80 % der tatsächlichen Kosten und wenn die Prognose 100 % übersteigt. Entfällt mit `budget_amount = 0`. |
 
-Alle Alarme lösen sich selbst auf, sobald die Bedingung nicht mehr zutrifft; je Vorfall kommt also eine Mail und eine Entwarnung.
+Alle Alarme lösen sich selbst auf, sobald die Bedingung nicht mehr zutrifft; je Vorfall kommt also eine Mail und eine Entwarnung. Beim Health-Check kommt die Entwarnung erst, wenn der letzte gescheiterte Lauf aus dem Fenster des Alarms fällt, mit dem Default 6 Stunden nach diesem Lauf.
 
 ## Entscheidungen
 
 **Nur Zählwerte in den Meldungen.** Die Abfragen enden in einem einzigen `summarize count()`. Eine Alarm-Mail verlässt Azure; Nachrichten und Details von Exceptions können Mandantendaten enthalten und bleiben deshalb in Application Insights, hinter dessen Zugriffsschutz. Wer eigene Alarme ergänzt, hält es genauso.
 
-**Health-Check als Webtest.** Flex Consumption fährt ohne Last auf null Instanzen herunter. Den Health-Check von App Service (`healthCheckPath`) gibt es dort nicht, und ein Alarm auf fehlende Requests oder Lebenszeichen würde bei jeder ruhigen App anschlagen. Ein Standard-Webtest prüft von außen, ob die App antwortet, und startet sie dafür notfalls. Der Endpunkt muss ohne Token mit 200 antworten; im Template ist das `/api/health` (`[AllowAnonymous]`). Klassische URL-Ping-Tests hat Microsoft abgekündigt.
+**Health-Check von außen.** Flex Consumption fährt ohne Last auf null Instanzen herunter. Den Health-Check von App Service (`healthCheckPath`) gibt es dort nicht, und ein Alarm auf fehlende Requests oder Lebenszeichen würde bei jeder ruhigen App anschlagen. Ein Aufruf von außen prüft, ob die App antwortet, und startet sie dafür notfalls. Der Endpunkt muss ohne Token erfolgreich antworten; im Template ist das `/api/health` (`[AllowAnonymous]`).
 
-**Zwei Standorte, beide müssen ausfallen.** Eine Netzstörung an einem Standort ist kein Ausfall der App. Das Fenster des Alarms umfasst mindestens zwei Läufe je Standort.
+**Alle 4 Stunden, per Logic App.** Jeder Aufruf nach einer Ruhephase startet eine Instanz, zählt gegen das Freikontingent der Function und schreibt die Startmeldungen des Hosts in die Logs. Bis v0.12.0 rief ein Webtest von Application Insights alle 15 Minuten aus zwei Standorten auf, rund 190 Mal am Tag; die Startmeldungen machten in einem migrierten Projekt einen großen Teil der Logs aus. Webtests laufen höchstens alle 15 Minuten, deshalb übernimmt eine Logic App mit Zeitplan. Ein Ausfall fällt so spätestens nach 4 Stunden und 15 Minuten auf; wer es früher wissen muss, setzt `health_check_interval_hours` kleiner.
+
+**Ein Standort, dafür Wiederholungen.** Die Logic App ruft aus der Region des Projekts auf. Kurze Störungen und den Kaltstart überbrückt die Standard-Wiederholung (bis zu vier Wiederholungen, je Versuch bis zu zwei Minuten Timeout). Das Fenster des Alarms ist länger als der Abstand der Läufe: Scheitern zwei Läufe nacheinander, bleibt der Alarm bestehen, statt zwischendurch Entwarnung zu geben.
 
 **Jede Exception zählt einmal.** Zu einer unbehandelten Exception in einer Function schreibt die Plattform neben dem Eintrag des Workers zwei weitere ohne SDK-Version und Vorgang. Die Abfrage lässt diese weg (`isnotempty(sdkVersion)`), sonst lösten schon zwei fehlgeschlagene Aufrufe den Alarm bei 5 aus.
 
@@ -58,16 +60,18 @@ Preise für Westeuropa, Stand Oktober 2026, ohne Gewähr:
 
 | Posten | Kosten |
 | --- | --- |
-| Webtest | rund 0,0006 Euro je Lauf und Standort; mit dem Default (alle 15 Minuten, 2 Standorte) rund 3,50 Euro im Monat, mit `health_check_frequency = 300` rund 10,40 Euro |
+| Logic App (Health-Check) | zwei Ausführungen je Lauf (Zeitplan und Aufruf), mit dem Default unter einem Cent im Monat |
 | Abfrage-Alarme (Exceptions, Tageslimit) | je rund 0,44 Euro im Monat |
 | Metrik-Alarm (Health) | rund 0,09 Euro im Monat |
 | Aktionsgruppe, E-Mails, Budget | ohne Kosten |
 
-Jeder Webtest-Lauf ruft die Function auf und erzeugt etwas Telemetrie.
+Jeder Health-Check ruft die Function auf, startet nach einer Ruhephase eine Instanz und erzeugt Telemetrie. Mit dem Default sind das 6 Aufrufe am Tag; der frühere Webtest kam auf rund 190 und kostete rund 3,50 Euro im Monat.
 
 ## Rechte
 
-Die ausführende Identität braucht `Contributor` auf der Subscription bzw. Resource Group; das deckt Aktionsgruppe, Alarme, Webtest und Budget (`Microsoft.Consumption/budgets/write`) ab. Rollen vergibt das Modul nicht.
+Die ausführende Identität braucht `Contributor` auf der Subscription bzw. Resource Group; das deckt Aktionsgruppe, Alarme, Logic App und Budget (`Microsoft.Consumption/budgets/write`) ab. Rollen vergibt das Modul nicht.
+
+Der Ressourcenanbieter `Microsoft.Logic` muss in der Subscription registriert sein. azurerm registriert seit Version 5 nichts mehr von selbst; das Template trägt ihn deshalb in `resource_providers_to_register` des Providers ein. Ohne Template einmalig `az provider register --namespace Microsoft.Logic`, sonst scheitert der Apply mit `MissingSubscriptionRegistration`.
 
 Budgets gibt es nur für Subscriptions mit Cost Management (Pay-as-you-go, EA, Microsoft-Kundenvereinbarung). Bei Subscriptions über einen CSP-Partner kann das Anlegen scheitern; dann `budget_amount = 0` setzen.
 
@@ -79,9 +83,8 @@ Budgets gibt es nur für Subscriptions mit Cost Management (Pay-as-you-go, EA, M
 | `resource_group_name`, `resource_group_id`, `location`, `application_insights_id`, `log_analytics_workspace_id` | Outputs von `core` | |
 | `alert_emails` | Empfänger, mindestens einer | |
 | `exception_threshold` | Exceptions je Stunde, ab denen der Alarm kommt | `5` |
-| `health_check_url` | URL für den Webtest; `null` ohne Webtest | `null` |
-| `health_check_frequency` | Sekunden zwischen den Läufen: 300, 600 oder 900 | `900` |
-| `health_check_locations` | Standorte des Webtests | Amsterdam und Dublin |
+| `health_check_url` | URL für den Health-Check; `null` ohne Health-Check | `null` |
+| `health_check_interval_hours` | Stunden zwischen den Läufen, 1 bis 12 | `4` |
 | `budget_amount` | Monatsbudget; `0` ohne Budget | `0` |
 | `tags` | zusätzliche Tags | `{}` |
 
