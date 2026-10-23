@@ -22,7 +22,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
-| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template, Environments mit Freigaben, Pipeline, Branch-Policy für die PR-Validierung (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
 ### core
 
@@ -236,6 +236,17 @@ PR-Validierung (`pr_validation`, Standard `true`): eine Branch-Policy auf `main`
 
 Voraussetzungen: `pipelines_version` ab v0.5.0, denn ältere Versionen von seed-pipelines deployen auch in PR-Läufen (das Modul bricht dann mit einer Meldung ab). Die anlegende Identität braucht am Repo die Berechtigung „Edit policies“; beim PAT von `seed-scaffold` genügt dafür der Scope Code (Read, write & manage).
 
+Für ein zentrales Scaffold, das Seed-Projekte in anderen Azure-DevOps-Projekten anlegt (seed-pipelines, Selbstbedienung):
+
+- **`create_repository = false`:** Das Modul nutzt das vorhandene Repo `repository` (leer: `name`) und schreibt nur `project.yaml` und `azure-pipelines.yml`. Grund: Das Job-Token des zentralen Projekts darf unter „Protect access to repositories in YAML pipelines“ keine Repos anlegen. Die Person legt das Repo an, die Pipeline führt seed-template vorher ein.
+- **`approver_groups`:** Gruppen der Organisation, deren Mitglieder zusätzlich zu `approvers` freigeben.
+- **`requester_can_approve`** (Standard `true`): im zentralen Scaffold `false`, damit niemand die eigene Infrastruktur allein freigibt.
+- **`min_reviewers`** (Standard `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen.
+- **`pool`:** Agent-Pool der Projekt-Pipeline, ab `pipelines_version` v0.13.0; das Modul berechtigt die Pipeline für dessen Queue, sonst fragte der erste Lauf danach („Permit“).
+- **Output `project_id`:** startet den ersten Lauf im anderen Projekt.
+
+Bis v0.13.0 legte das Modul das Repo immer an; ein `moved`-Block übernimmt es in bestehenden States.
+
 #### MCP
 
 Für den MCP-Server aus `Bfs.Seed.Mcp` (im Template `features.mcp`):
@@ -356,6 +367,8 @@ terraform -chdir=examples/keyvault init -backend=false
 terraform -chdir=examples/keyvault validate
 terraform -chdir=examples/storage init -backend=false
 terraform -chdir=examples/storage validate
+terraform -chdir=examples/ado-project init -backend=false
+terraform -chdir=examples/ado-project validate
 ```
 
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
@@ -367,6 +380,8 @@ terraform -chdir=monitoring init -backend=false
 terraform -chdir=monitoring test
 terraform -chdir=storage init -backend=false
 terraform -chdir=storage test
+terraform -chdir=ado-project init -backend=false
+terraform -chdir=ado-project test
 ```
 
 ## Lizenz
