@@ -36,9 +36,21 @@ variable "environments" {
 }
 
 variable "approvers" {
-  description = "Principal Names (E-Mail) der Personen, die Infrastruktur-Änderungen freigeben. Leer: keine Freigabe."
+  description = "Principal Names (E-Mail) der Personen, die Infrastruktur-Änderungen freigeben. Leer und ohne approver_groups: keine Freigabe."
   type        = list(string)
   default     = []
+}
+
+variable "approver_groups" {
+  description = "Gruppen der Organisation (Name), deren Mitglieder Infrastruktur-Änderungen ebenfalls freigeben, zusätzlich zu approvers. Im zentralen Scaffold eine feste Gruppe, damit nicht jede Person ihre eigene Infrastruktur allein freigibt."
+  type        = list(string)
+  default     = []
+}
+
+variable "requester_can_approve" {
+  description = "Darf die Person, die einen Lauf ausgelöst hat, dessen Infrastruktur-Änderung selbst freigeben? Im zentralen Scaffold false."
+  type        = bool
+  default     = true
 }
 
 variable "app_approval_environments" {
@@ -73,9 +85,38 @@ variable "pr_validation" {
 }
 
 variable "authorize_service_connections" {
-  description = "Pipeline für beide Service Connections berechtigen. Braucht die Administrator-Rolle an den Service Connections; seed-scaffold lässt das aus, dort gibt ein Admin beim ersten Lauf frei."
+  description = "Pipeline für beide Service Connections berechtigen. Braucht die Administrator-Rolle an den Service Connections: Das zentrale Scaffold hat sie, weil es die Service Connections selbst ins Projekt teilt; seed-scaffold im eigenen Projekt lässt das aus, dort gibt ein Admin beim ersten Lauf frei."
   type        = bool
   default     = true
+}
+
+variable "min_reviewers" {
+  description = "Pull Requests auf main brauchen so viele Zustimmungen anderer Personen; die eigene Stimme zählt nicht. 0: keine Pflicht. Sperrt wie pr_validation direkte Pushes auf main."
+  type        = number
+  default     = 0
+
+  validation {
+    condition     = var.min_reviewers >= 0 && var.min_reviewers <= 10 && floor(var.min_reviewers) == var.min_reviewers
+    error_message = "min_reviewers: ganze Zahl von 0 bis 10."
+  }
+}
+
+variable "create_repository" {
+  description = "Repo aus template_url importieren. false: Das Repo gibt es schon (repository), etwa für das zentrale Scaffold, dessen Job-Token keine Repos anlegen darf; seed-template führt dann die Pipeline vorher ein."
+  type        = bool
+  default     = true
+}
+
+variable "repository" {
+  description = "Name des Repos; leer: name."
+  type        = string
+  default     = ""
+}
+
+variable "pool" {
+  description = "Agent-Pool der Projekt-Pipeline (Parameter pool von web-app.yml ab seed-pipelines v0.13.0); leer: Microsoft-gehostete Agents."
+  type        = string
+  default     = ""
 }
 
 variable "template_url" {
