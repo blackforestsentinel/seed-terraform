@@ -242,7 +242,7 @@ Für ein zentrales Scaffold, das Seed-Projekte in anderen Azure-DevOps-Projekten
 - **`approver_groups`:** Gruppen der Organisation, deren Mitglieder zusätzlich zu `approvers` freigeben.
 - **`requester_can_approve`** (Standard `true`): im zentralen Scaffold `false`, damit niemand die eigene Infrastruktur allein freigibt.
 - **`min_reviewers`** (Standard `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen.
-- **`pool`:** Agent-Pool der Projekt-Pipeline, ab `pipelines_version` v0.13.0.
+- **`pool`:** Agent-Pool der Projekt-Pipeline, ab `pipelines_version` v0.13.0; das Modul berechtigt die Pipeline für dessen Queue, sonst fragte der erste Lauf danach („Permit“).
 - **Output `project_id`:** startet den ersten Lauf im anderen Projekt.
 
 Bis v0.13.0 legte das Modul das Repo immer an; ein `moved`-Block übernimmt es in bestehenden States.
