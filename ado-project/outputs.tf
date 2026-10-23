@@ -1,11 +1,16 @@
+output "project_id" {
+  description = "ID des Azure-DevOps-Projekts, in dem Repo und Pipeline liegen."
+  value       = data.azuredevops_project.this.id
+}
+
 output "repository_url" {
-  description = "Clone-URL des neuen Repos."
-  value       = azuredevops_git_repository.this.remote_url
+  description = "Clone-URL des Repos."
+  value       = local.repository_remote_url
 }
 
 output "repository_web_url" {
-  description = "Web-Ansicht des neuen Repos."
-  value       = azuredevops_git_repository.this.web_url
+  description = "Web-Ansicht des Repos."
+  value       = local.repository_web_url
 }
 
 output "pipeline_id" {

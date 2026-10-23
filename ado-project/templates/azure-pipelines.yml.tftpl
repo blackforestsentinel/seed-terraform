@@ -33,6 +33,10 @@ extends:
     frontend: false
 %{ endif ~}
     serviceConnection: ${service_connection}
+%{ if pool != "" ~}
+    # Eigener Agent-Pool statt Microsoft-gehosteter Agents
+    pool: ${pool}
+%{ endif ~}
     terraformState:
       resourceGroup: ${terraform_state.resource_group}
       storageAccount: ${terraform_state.storage_account}
