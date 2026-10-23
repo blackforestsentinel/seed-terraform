@@ -49,6 +49,12 @@ mock_provider "azuredevops" {
     }
   }
 
+  mock_data "azuredevops_agent_queue" {
+    defaults = {
+      id = 5
+    }
+  }
+
   mock_resource "azuredevops_git_repository" {
     defaults = {
       id = "88888888-8888-8888-8888-888888888888"
@@ -107,8 +113,8 @@ run "standard_wie_bisher" {
   }
 
   assert {
-    condition     = !strcontains(azuredevops_git_repository_file.pipeline.content, "pool:")
-    error_message = "Ohne pool bleibt azure-pipelines.yml bei Microsoft-gehosteten Agents."
+    condition     = !strcontains(azuredevops_git_repository_file.pipeline.content, "pool:") && length(azuredevops_pipeline_authorization.pool) == 0
+    error_message = "Ohne pool bleibt azure-pipelines.yml bei Microsoft-gehosteten Agents, ohne Queue-Berechtigung."
   }
 }
 
@@ -139,6 +145,11 @@ run "zentrales_scaffold" {
   assert {
     condition     = strcontains(azuredevops_git_repository_file.pipeline.content, "\n    pool: Default\n")
     error_message = "pool landet in azure-pipelines.yml des Projekts."
+  }
+
+  assert {
+    condition     = one(azuredevops_pipeline_authorization.pool).type == "queue" && data.azuredevops_agent_queue.pool[0].name == "Default"
+    error_message = "Mit pool ist die Pipeline für dessen Queue berechtigt, kein Permit beim ersten Lauf."
   }
 }
 

@@ -189,6 +189,24 @@ resource "azuredevops_pipeline_authorization" "endpoints" {
   pipeline_id = azuredevops_build_definition.this.id
 }
 
+# Eigener Pool: Dessen Queue ist im Projekt meist nicht für alle Pipelines freigegeben; ohne
+# Berechtigung wartete der erste Lauf auf "Permit".
+data "azuredevops_agent_queue" "pool" {
+  count = var.pool != "" ? 1 : 0
+
+  project_id = data.azuredevops_project.this.id
+  name       = var.pool
+}
+
+resource "azuredevops_pipeline_authorization" "pool" {
+  count = var.pool != "" ? 1 : 0
+
+  project_id  = data.azuredevops_project.this.id
+  resource_id = data.azuredevops_agent_queue.pool[0].id
+  type        = "queue"
+  pipeline_id = azuredevops_build_definition.this.id
+}
+
 resource "azuredevops_pipeline_authorization" "environments" {
   for_each = azuredevops_environment.this
 
