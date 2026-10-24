@@ -1,0 +1,8 @@
+# Hält die per Commit-SHA gepinnten Actions in .github/workflows aktuell; Dependabot schlägt
+# neue Versionen als Pull Request vor und passt SHA und Versionskommentar gemeinsam an.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

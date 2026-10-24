@@ -61,3 +61,15 @@ variable "spa_extra_redirect_uris" {
     error_message = "spa_extra_redirect_uris: Unter chromiumapp.org steht vor der Domain die ID der Browser-Erweiterung, 32 Kleinbuchstaben von a bis p, z. B. https://abcdefghijklmnopabcdefghijklmnop.chromiumapp.org/."
   }
 }
+
+variable "additional_allowed_client_ids" {
+  description = "Weitere Client-IDs (Application ID), deren delegierte Tokens die API annimmt, etwa eine andere App mit Admin-Zustimmung oder ein Dienst im On-Behalf-Of-Fluss. Kommen in Auth__AllowedClientIds hinter die Clients, die das Modul selbst anlegt oder vorautorisiert; mit existing_registration stehen nur sie dort."
+  type        = list(string)
+  default     = []
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for id in var.additional_allowed_client_ids : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
+    error_message = "additional_allowed_client_ids: jeweils eine Client-ID (GUID)."
+  }
+}

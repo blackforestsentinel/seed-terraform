@@ -34,7 +34,7 @@ output "spa_redirect_uris" {
 }
 
 output "app_settings" {
-  description = "App-Settings für die Function: das Feature-Flag Seed__Features__Sso und den Abschnitt Auth, den Bfs.Seed.Auth liest."
+  description = "App-Settings für die Function: das Feature-Flag Seed__Features__Sso und den Abschnitt Auth, den Bfs.Seed.Auth liest, dazu die zugelassenen Clients als Auth__AllowedClientIds__0, __1, … (nicht bei existing_registration)."
   value = merge(
     {
       # Schaltet im Template UseSeedAuth() ein. Ohne das Flag liefe die API ohne Token-Prüfung,
@@ -47,6 +47,8 @@ output "app_settings" {
     # Nur bei einer anderen Berechtigung als dem Default von Bfs.Seed.Auth, damit sich bestehende
     # Function Apps nicht ändern.
     local.api_scope_name == "access_as_user" ? {} : { Auth__RequiredScope = local.api_scope_name },
+    # Clients, deren delegierte Tokens die API annimmt (main.tf).
+    local.allowed_client_settings,
     local.mcp_app_settings,
   )
 }
