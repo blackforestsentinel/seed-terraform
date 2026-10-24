@@ -4,8 +4,9 @@
 #
 # Entra ist der Autorisierungsserver. Dynamische Client-Registrierung kennt Entra nicht; deshalb
 # legt das Modul je Projekt und Umgebung eine Registrierung an, deren Client-ID man einmal im
-# Client einträgt. Eine Allowlist der Clients gibt es nicht: Die API nimmt jedes Token mit
-# Audience der API und Scope mcp_access an, die Werkzeuge prüfen Capabilities aus App-Rollen.
+# Client einträgt. Tokens mit Scope mcp_access nimmt die API nur von Clients an, die das Modul
+# anlegt oder vorautorisiert (Auth__AllowedClientIds, main.tf), nicht von jeder App mit
+# Einwilligung; was jemand darf, prüfen die Werkzeuge über Capabilities aus App-Rollen.
 
 variable "mcp" {
   description = "MCP-Server einschalten: Scope mcp_access an der API, öffentliche Client-Registrierung für MCP-Clients, Vorautorisierung."
@@ -41,7 +42,7 @@ variable "mcp_redirect_uris" {
 }
 
 variable "mcp_preauthorized_client_ids" {
-  description = "Weitere Clients mit eigener Entra-Registrierung, die mcp_access ohne Einwilligungsdialog bekommen. Standard: VS Code (aebc6443-…), das sich bei Entra immer mit seiner eigenen Registrierung anmeldet."
+  description = "Weitere Clients mit eigener Entra-Registrierung, die mcp_access ohne Einwilligungsdialog bekommen; sie stehen auch in Auth__AllowedClientIds. Standard: VS Code (aebc6443-…), das sich bei Entra immer mit seiner eigenen Registrierung anmeldet."
   type        = list(string)
   nullable    = false
   default     = ["aebc6443-996d-45c2-90f0-388ff96faa56"]

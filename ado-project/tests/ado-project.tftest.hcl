@@ -108,8 +108,8 @@ run "standard_wie_bisher" {
   }
 
   assert {
-    condition     = length(azuredevops_branch_policy_min_reviewers.this) == 0
-    error_message = "Standard: keine Pflicht-Reviewer."
+    condition     = one(azuredevops_branch_policy_min_reviewers.this).settings[0].reviewer_count == 1
+    error_message = "Standard: ein Pflicht-Reviewer."
   }
 
   assert {
@@ -150,6 +150,19 @@ run "zentrales_scaffold" {
   assert {
     condition     = one(azuredevops_pipeline_authorization.pool).type == "queue" && data.azuredevops_agent_queue.pool[0].name == "Default"
     error_message = "Mit pool ist die Pipeline für dessen Queue berechtigt, kein Permit beim ersten Lauf."
+  }
+}
+
+run "ohne_pflicht_reviewer" {
+  command = plan
+
+  variables {
+    min_reviewers = 0
+  }
+
+  assert {
+    condition     = length(azuredevops_branch_policy_min_reviewers.this) == 0
+    error_message = "min_reviewers = 0 schaltet die Pflicht-Reviewer ab."
   }
 }
 

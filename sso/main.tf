@@ -43,8 +43,9 @@ resource "azuread_application" "api" {
 
     # Zustimmen dürfen nur Admins. Die eigenen Clients (SPA, Custom Connector) sind vorautorisiert
     # und brauchen keine Zustimmung; eine fremde App bekäme sonst über die Einwilligung einer
-    # einzelnen Person Tokens für die ganze API in deren Namen. mcp_access bleibt vom Typ User
-    # (mcp.tf, README: Keine Allowlist der Clients).
+    # einzelnen Person Tokens für die ganze API in deren Namen. mcp_access bleibt vom Typ User;
+    # fremde Clients hält dort die Liste der zugelassenen Clients auf (unten, README: Zugelassene
+    # Clients).
     oauth2_permission_scope {
       id                         = local.scope_id
       value                      = var.scope_name
@@ -153,6 +154,35 @@ resource "azuread_application_pre_authorized" "spa" {
   application_id       = azuread_application.api[0].id
   authorized_client_id = azuread_application.spa[0].client_id
   permission_ids       = [local.scope_id]
+}
+
+# --- Zugelassene Clients: Auth:AllowedClientIds in Bfs.Seed.Auth ----------------
+
+locals {
+  # Delegierte Tokens nimmt die API nur von diesen Clients an (azp bzw. appid im Token): von den
+  # Registrierungen, die das Modul anlegt (SPA, Custom Connector, MCP-Clients), und von den
+  # Clients, die es für mcp_access vorautorisiert (Standard: VS Code). Eine fremde App, der
+  # jemand zugestimmt hat, kommt damit nicht durch. Dazu additional_allowed_client_ids. Mit
+  # existing_registration stehen nur diese in der Liste; ist sie leer, prüft die API den Client nicht.
+  #
+  # Feste Reihenfolge statt alles sortiert: Die Client-ID einer neuen Registrierung kennt erst
+  # der Apply, eine sortierte Liste wäre im Plan ganz unbekannt und mit ihr alle App-Settings der
+  # Function. Die eigenen Registrierungen sind je höchstens eine, die vorautorisierten Clients
+  # folgen sortiert, ohne Doppelte und klein geschrieben wie azp.
+  allowed_client_ids = concat(
+    azuread_application.spa[*].client_id,
+    azuread_application.connector[*].client_id,
+    azuread_application.mcp[*].client_id,
+    sort(distinct([for p in values(azuread_application_pre_authorized.mcp_clients) : lower(p.authorized_client_id)])),
+    # Weitere Clients des Projekts, auch mit existing_registration.
+    sort(distinct([for id in var.additional_allowed_client_ids : lower(id)])),
+  )
+
+  # Ein App-Setting je Client, so liest .NET eine Liste aus der Konfiguration; eingebunden in
+  # outputs.tf.
+  allowed_client_settings = {
+    for i, id in local.allowed_client_ids : "Auth__AllowedClientIds__${i}" => id
+  }
 }
 
 # Bis v0.4.0 ohne count. Die Verschiebungen ändern nur den State, nicht die Registrierungen;

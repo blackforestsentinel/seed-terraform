@@ -17,8 +17,8 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 
 | Modul | Inhalt | Status |
 | --- | --- | --- |
-| `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights ohne lokale Authentifizierung mit Log Analytics (Tageslimit), Host-Storage mit Managed Identity | Phase 1 |
-| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
+| `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights und Log Analytics (Tageslimit) ohne lokale Authentifizierung, Host-Storage mit Managed Identity | Phase 1 |
+| `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, Liste der zugelassenen Clients für `Bfs.Seed.Auth`, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
@@ -64,6 +64,8 @@ Umstieg bestehender Projekte (vor dieser Version):
 - Der Apply ändert Application Insights und den Workspace an Ort und Stelle; nichts wird neu angelegt, die Daten bleiben.
 - Er legt die Rolle an und setzt das App-Setting. Die Function startet dadurch neu und sendet danach per Managed Identity, Host wie Worker. Ein neuer Deploy oder ein Paket-Update ist nicht nötig; alle bisherigen Versionen von `Bfs.Seed.Functions.Core` bringen `Microsoft.Azure.Functions.Worker.ApplicationInsights` 2.50 mit, das die Einstellung auswertet.
 - Terraform schaltet die lokale Authentifizierung ab, bevor die Function das neue App-Setting hat. Telemetrie aus dieser Zeitspanne und dem Neustart geht verloren, im Test rund eine Minute. Danach ist sie vollständig. Wer das vermeiden will, wendet die Änderung in einer ruhigen Zeit an.
+
+Ab v0.15.0 ist auch am Log Analytics Workspace die lokale Authentifizierung aus (`local_authentication_enabled = false`). Die Workspace-Schlüssel (Shared Keys) stehen weiter im State, gelten aber nicht mehr: Wer State oder Plan lesen kann, schreibt damit keine Daten in den Workspace. Die Seed-Module brauchen sie nicht: Application Insights schreibt als workspace-basierte Ressource über Azure Monitor in den Workspace, das Audit-Log des Key Vaults kommt per Diagnoseeinstellung, die Alarme aus monitoring fragen über Azure Monitor ab, und die Logic App des Health-Checks schreibt nichts in den Workspace. Abfragen im Portal und mit `az monitor log-analytics query` laufen ohnehin über Entra ID. Eigene Quellen, die mit Workspace-ID und Schlüssel senden (HTTP Data Collector API, alter Log-Analytics-Agent), vorher auf die Logs Ingestion API oder den Azure Monitor Agent umstellen. Der Apply ändert den Workspace an Ort und Stelle, die Daten bleiben.
 
 #### Eigene Domains
 
@@ -116,7 +118,25 @@ module "core" {
 
 Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `Application.ReadWrite.OwnedBy` mit Admin-Consent. Sie trägt sich selbst als Besitzerin der App-Registrierungen ein und darf nur diese verwalten.
 
-Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris`, `app_roles` und `directory_permissions`.
+Ausgaben: `app_settings` (das Feature-Flag `Seed__Features__Sso = "true"`, mit dem das Template `UseSeedAuth()` einschaltet, sowie `Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`, dazu die [zugelassenen Clients](#zugelassene-clients) als `Auth__AllowedClientIds__0`, `Auth__AllowedClientIds__1`, …), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris`, `app_roles` und `directory_permissions`.
+
+#### Zugelassene Clients
+
+Ab v0.15.0 nennt `app_settings` die Clients, deren delegierte Tokens die API annimmt, je einen als `Auth__AllowedClientIds__0`, `Auth__AllowedClientIds__1`, … (in `Bfs.Seed.Auth` die Liste `Auth:AllowedClientIds`). `Bfs.Seed.Auth` vergleicht sie mit dem Client im Token (`azp` bei v2-, `appid` bei v1-Tokens) und lehnt andere ab; ohne Einträge prüft es den Client nicht. Eine fremde App, der jemand im Tenant zugestimmt hat, kommt so nicht an die API, auch nicht über `mcp_access` (Typ User).
+
+Das Modul trägt jeden Client ein, den es selbst anlegt oder an der API vorautorisiert, in dieser Reihenfolge:
+
+1. die SPA-Registrierung (mit Frontend oder `spa_extra_redirect_uris`),
+2. die Client-Registrierung des Custom Connectors (`connector`),
+3. die Client-Registrierung für MCP-Clients (`mcp`),
+4. mit `mcp` die Clients aus `mcp_preauthorized_client_ids` (Standard: VS Code), sortiert, ohne Doppelte und klein geschrieben,
+5. die Clients aus `additional_allowed_client_ids`, ebenso sortiert.
+
+Die eigenen Registrierungen stehen vorn, statt einsortiert zu werden: Ihre Client-IDs entstehen erst beim Apply, eine ganz sortierte Liste wäre im Plan unbekannt und mit ihr alle App-Settings der Function. Kommt ein Client dazu oder fällt einer weg, verschieben sich die Nummern der folgenden Einträge; der Plan zeigt das als Änderung der App-Settings.
+
+Mit `existing_registration` und ohne jeden dieser Clients (nur API) setzt das Modul nur die Einträge aus `additional_allowed_client_ids`; ohne sie nimmt die API wie bisher Tokens jedes Clients an. Weitere Clients mit delegierten Tokens, etwa eine andere App mit Administratorzustimmung für `access_as_user` oder ein Dienst im On-Behalf-Of-Flow, kennt das Modul nicht: Sie gehören in `additional_allowed_client_ids` (im Template `auth.additionalClientIds` in `project.yaml`), sonst lehnt die API sie ab, sobald `Bfs.Seed.Auth` die Liste prüft. Solche Projekte vor dem Update prüfen. Tokens einer Anwendung ohne angemeldete Person (App-Rollen mit `Application`) betrifft die Liste nicht.
+
+Umstieg: Der erste Plan nach dem Update zeigt an der Function App die neuen App-Settings, eine Änderung an Ort und Stelle; die Function startet danach neu. Versionen von `Bfs.Seed.Auth` ohne `AllowedClientIds` ignorieren die Einträge.
 
 #### App-Rollen und Zuweisung
 
@@ -169,7 +189,7 @@ module "sso" {
 }
 ```
 
-Dann legt das Modul nichts an und braucht keine Graph-Rechte im fremden Tenant. Es reicht Tenant, Client-IDs und Berechtigung als `app_settings` und `frontend_config` weiter; die API prüft Tokens gegen den angegebenen Tenant, das Frontend meldet sich dort an. Heißt die Berechtigung nicht `access_as_user`, setzt es `Auth__RequiredScope`. v1- und v2-Tokens akzeptiert `Bfs.Seed.Auth` beide. War die Registrierung bisher angelegt, entfernt der nächste Apply die eigenen Registrierungen.
+Dann legt das Modul nichts an und braucht keine Graph-Rechte im fremden Tenant. Es reicht Tenant, Client-IDs und Berechtigung als `app_settings` und `frontend_config` weiter; die API prüft Tokens gegen den angegebenen Tenant, das Frontend meldet sich dort an. Heißt die Berechtigung nicht `access_as_user`, setzt es `Auth__RequiredScope`. Zugelassene Clients setzt es nur aus `additional_allowed_client_ids`, die Registrierungen gehören dem anderen Tenant; ohne sie prüft die API den Client nicht. v1- und v2-Tokens akzeptiert `Bfs.Seed.Auth` beide. War die Registrierung bisher angelegt, entfernt der nächste Apply die eigenen Registrierungen.
 
 Was der Admin im anderen Tenant einrichtet:
 
@@ -241,7 +261,7 @@ Für ein zentrales Scaffold, das Seed-Projekte in anderen Azure-DevOps-Projekten
 - **`create_repository = false`:** Das Modul nutzt das vorhandene Repo `repository` (leer: `name`) und schreibt nur `project.yaml` und `azure-pipelines.yml`. Grund: Das Job-Token des zentralen Projekts darf unter „Protect access to repositories in YAML pipelines“ keine Repos anlegen. Die Person legt das Repo an, die Pipeline führt seed-template vorher ein.
 - **`approver_groups`:** Gruppen der Organisation, deren Mitglieder zusätzlich zu `approvers` freigeben.
 - **`requester_can_approve`** (Standard `true`): im zentralen Scaffold `false`, damit niemand die eigene Infrastruktur allein freigibt.
-- **`min_reviewers`** (Standard `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen.
+- **`min_reviewers`** (Standard `1`, bis v0.14.0 `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen. Arbeitet nur eine Person am Projekt, braucht sie eine zweite für Reviews oder das Recht, Policies beim Abschließen zu umgehen; `0` schaltet die Pflicht ab.
 - **`pool`:** Agent-Pool der Projekt-Pipeline, ab `pipelines_version` v0.13.0; das Modul berechtigt die Pipeline für dessen Queue, sonst fragte der erste Lauf danach („Permit“).
 - **Output `project_id`:** startet den ersten Lauf im anderen Projekt.
 
@@ -263,14 +283,14 @@ module "sso" {
 | --- | --- |
 | Scope `mcp_access` an der API | Gilt nur für `/api/mcp`. Ein Token, das ein MCP-Client bekommt, erreicht die übrige API nicht; Web-Tokens mit `access_as_user` erreichen den MCP-Endpunkt nicht. |
 | Registrierung `<name>-<umgebung>-mcp` | Öffentlicher Client (Mobile und Desktop, PKCE, kein Secret) für Clients ohne eigene Entra-Registrierung. Redirect-URIs aus `mcp_redirect_uris`, Standard: Claude (`https://claude.ai/api/mcp/auth_callback`) und Claude Code (`http://localhost/callback`, `http://127.0.0.1/callback`; Entra ignoriert bei Loopback den Port). |
-| Vorautorisierung | Dieser Client und `mcp_preauthorized_client_ids` (Standard: VS Code, `aebc6443-996d-45c2-90f0-388ff96faa56`) bekommen `mcp_access` ohne Einwilligungsdialog, nie `access_as_user`. |
+| Vorautorisierung | Dieser Client und `mcp_preauthorized_client_ids` (Standard: VS Code, `aebc6443-996d-45c2-90f0-388ff96faa56`) bekommen `mcp_access` ohne Einwilligungsdialog, nie `access_as_user`. Beide stehen in den zugelassenen Clients. |
 | Application ID URI `https://<mcp_custom_domain>/api/mcp` | Nur mit `mcp_custom_domain`, dazu das App-Setting `Mcp__Resource`. |
 
 Mit `existing_registration` legt das Modul für MCP nichts an: Scope `mcp_access`, Client-Registrierung und Vorautorisierung richtet der Admin im anderen Tenant von Hand ein. Ein `check` weist im Plan darauf hin.
 
 **Warum eine eigene Domain für Claude:** Claude sendet die MCP-Adresse als `resource` (RFC 8707). Entra stellt nur dann ein Token aus, wenn diese Adresse eine Application ID URI der API ist, sonst kommt nach der Anmeldung `AADSTS9010010`. HTTPS-URIs nimmt Entra dort nur auf Domains an, die im Tenant verifiziert sind; `*.azurewebsites.net` scheidet aus. Die Domain muss deshalb vor dem Apply im Tenant verifiziert sein, sonst scheitert `azuread_application_identifier_uri.mcp`. DNS-Einträge, Hostname-Bindung und Zertifikat an der Function legt das Modul nicht an; die Schritte stehen in der README von seed-template. VS Code meldet sich mit seiner eigenen Registrierung ohne `resource` an und kommt ohne eigene Domain aus.
 
-**Keine Allowlist der Clients:** Die API nimmt jedes Token mit ihrer Audience und `mcp_access` an, gleich von welchem Client. `mcp_access` ist ein Scope vom Typ User, den jede App im Tenant mit Einwilligung bekommen kann; deshalb gilt er nur für den MCP-Endpunkt, und was jemand dort darf, entscheiden die Capabilities der Werkzeuge.
+**Nur zugelassene Clients:** `mcp_access` ist ein Scope vom Typ User, den jede App im Tenant mit Einwilligung bekommen kann. Die API nimmt Tokens aber nur von den [zugelassenen Clients](#zugelassene-clients) an, also den eigenen Registrierungen und `mcp_preauthorized_client_ids`; eine fremde App mit Einwilligung kommt damit nicht durch. Der Scope gilt nur für den MCP-Endpunkt, und was jemand dort darf, entscheiden die Capabilities der Werkzeuge. Bis v0.14.0 gab es keine solche Liste; die API nahm jedes Token mit ihrer Audience und `mcp_access` an, gleich von welchem Client.
 
 **Einmal je Umgebung von Hand:** An `<name>-<umgebung>-mcp` die Administratorzustimmung erteilen (Entra Admin Center → App-Registrierungen → API-Berechtigungen). Sie deckt `offline_access` ab, also das Refresh-Token; ohne sie sehen Personen einen Einwilligungsdialog oder „Administratorgenehmigung erforderlich“. Die Pipeline-Identität könnte das nur mit `DelegatedPermissionGrant.ReadWrite.All`.
 

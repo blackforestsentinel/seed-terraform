@@ -24,13 +24,16 @@ variables {
 }
 
 run "ohne_neue_einstellungen_wie_bisher" {
+  # Im Mock haben alle Registrierungen dieselbe Client-ID; Auth__AllowedClientIds__0 ist die der SPA.
   assert {
     condition = output.app_settings == {
-      Auth__TenantId = "11111111-1111-1111-1111-111111111111"
-      Auth__ClientId = "33333333-3333-3333-3333-333333333333"
-      Auth__Audience = "api://33333333-3333-3333-3333-333333333333"
+      Seed__Features__Sso       = "true"
+      Auth__TenantId            = "11111111-1111-1111-1111-111111111111"
+      Auth__ClientId            = "33333333-3333-3333-3333-333333333333"
+      Auth__Audience            = "api://33333333-3333-3333-3333-333333333333"
+      Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
     }
-    error_message = "app_settings dürfen sich ohne neue Einstellungen nicht ändern."
+    error_message = "app_settings: Feature-Flag, die bisherigen Auth-Settings und die SPA als einziger zugelassener Client, ohne neue Einstellungen nichts weiter."
   }
 
   assert {
@@ -315,6 +318,11 @@ run "nur_weitere_redirect_uris" {
     condition     = keys(output.frontend_config.auth) == ["apiScope", "clientId", "tenantId"] && output.frontend_config.auth.clientId == "33333333-3333-3333-3333-333333333333"
     error_message = "frontend_config.auth ohne redirectBridgePath, weil es keine Bridge-URIs gibt."
   }
+
+  assert {
+    condition     = output.app_settings.Auth__AllowedClientIds__0 == "33333333-3333-3333-3333-333333333333"
+    error_message = "Auch eine SPA nur für weitere Redirect-URIs (Browser-Erweiterung) ist zugelassener Client."
+  }
 }
 
 run "weitere_redirect_uris_nur_https" {
@@ -373,6 +381,7 @@ run "vorhandene_registrierung_aus_anderem_tenant" {
 
   assert {
     condition = output.app_settings == {
+      Seed__Features__Sso = "true"
       Auth__TenantId      = "44444444-4444-4444-4444-444444444444"
       Auth__ClientId      = "55555555-5555-5555-5555-555555555555"
       Auth__Audience      = "https://api.kunde.example"
@@ -443,6 +452,14 @@ run "connector_an" {
     connector = true
   }
 
+  # Eigene Client-ID, damit sich der Connector in den zugelassenen Clients von der SPA abhebt.
+  override_resource {
+    target = azuread_application.connector
+    values = {
+      client_id = "88888888-8888-8888-8888-888888888888"
+    }
+  }
+
   assert {
     condition     = azuread_application.connector[0].display_name == "example-dev-connector" && azuread_application.connector[0].sign_in_audience == "AzureADMyOrg"
     error_message = "Die Client-Registrierung heißt <name>-<umgebung>-connector und ist single-tenant (Voraussetzung für die Managed Identity des Connectors)."
@@ -457,13 +474,15 @@ run "connector_an" {
   }
 
   assert {
-    condition     = output.connector_client_id == "33333333-3333-3333-3333-333333333333"
+    condition     = output.connector_client_id == "88888888-8888-8888-8888-888888888888"
     error_message = "connector_client_id nennt die Client-ID der Registrierung."
   }
 
   assert {
-    condition     = output.app_settings == run.ohne_neue_einstellungen_wie_bisher.app_settings
-    error_message = "connector ändert die App-Settings der Function nicht."
+    condition = output.app_settings == merge(run.ohne_neue_einstellungen_wie_bisher.app_settings, {
+      Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
+    })
+    error_message = "connector ergänzt die App-Settings nur um seine Client-ID als zugelassenen Client, nach der SPA."
   }
 }
 
@@ -485,4 +504,171 @@ run "connector_mit_vorhandener_registrierung" {
   }
 
   expect_failures = [check.connector_existing_registration]
+}
+
+run "vorhandene_registrierung_ohne_zugelassene_clients" {
+  command = plan
+
+  variables {
+    connector = true
+    mcp       = true
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      spa_client_id = "66666666-6666-6666-6666-666666666666"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
+  }
+
+  assert {
+    condition     = length([for k in keys(output.app_settings) : k if startswith(k, "Auth__AllowedClientIds__")]) == 0
+    error_message = "Mit existing_registration keine zugelassenen Clients, auch mit SPA, connector und mcp; die API prüft den Client dann nicht."
+  }
+
+  expect_failures = [check.connector_existing_registration, check.mcp_existing_registration]
+}
+
+run "weitere_zugelassene_clients" {
+  variables {
+    additional_allowed_client_ids = ["BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"]
+  }
+
+  assert {
+    condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
+      Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
+      Auth__AllowedClientIds__1 = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      Auth__AllowedClientIds__2 = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    }
+    error_message = "Weitere Clients kommen hinter die eigenen, sortiert, klein geschrieben und ohne Doppelte."
+  }
+}
+
+run "weitere_zugelassene_clients_mit_vorhandener_registrierung" {
+  command = plan
+
+  variables {
+    additional_allowed_client_ids = ["cccccccc-cccc-cccc-cccc-cccccccccccc"]
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      spa_client_id = "66666666-6666-6666-6666-666666666666"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
+  }
+
+  assert {
+    condition     = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == { Auth__AllowedClientIds__0 = "cccccccc-cccc-cccc-cccc-cccccccccccc" }
+    error_message = "Mit existing_registration stehen nur die weiteren Clients in der Liste."
+  }
+}
+
+run "weitere_zugelassene_clients_nur_guids" {
+  command = plan
+
+  variables {
+    additional_allowed_client_ids = ["meine-app"]
+  }
+
+  expect_failures = [var.additional_allowed_client_ids]
+}
+
+run "nur_api_ohne_zugelassene_clients" {
+  variables {
+    spa_redirect_uris = []
+  }
+
+  assert {
+    condition     = length([for k in keys(output.app_settings) : k if startswith(k, "Auth__AllowedClientIds__")]) == 0
+    error_message = "Ohne SPA, Connector und MCP legt das Modul keinen Client an; dann keine zugelassenen Clients."
+  }
+}
+
+run "mcp_zugelassene_clients" {
+  variables {
+    mcp = true
+  }
+
+  override_resource {
+    target = azuread_application.mcp
+    values = {
+      client_id = "99999999-9999-9999-9999-999999999999"
+    }
+  }
+
+  assert {
+    condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
+      Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
+      Auth__AllowedClientIds__1 = "99999999-9999-9999-9999-999999999999"
+      Auth__AllowedClientIds__2 = "aebc6443-996d-45c2-90f0-388ff96faa56"
+    }
+    error_message = "Mit mcp sind SPA, MCP-Client und VS Code (Standard von mcp_preauthorized_client_ids) zugelassen."
+  }
+}
+
+run "zugelassene_clients_reihenfolge" {
+  variables {
+    connector                    = true
+    mcp                          = true
+    mcp_preauthorized_client_ids = ["F0F0F0F0-0000-0000-0000-000000000001", "0a0a0a0a-0000-0000-0000-000000000002"]
+  }
+
+  override_resource {
+    target = azuread_application.connector
+    values = {
+      client_id = "88888888-8888-8888-8888-888888888888"
+    }
+  }
+
+  override_resource {
+    target = azuread_application.mcp
+    values = {
+      client_id = "99999999-9999-9999-9999-999999999999"
+    }
+  }
+
+  assert {
+    condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
+      Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
+      Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
+      Auth__AllowedClientIds__2 = "99999999-9999-9999-9999-999999999999"
+      Auth__AllowedClientIds__3 = "0a0a0a0a-0000-0000-0000-000000000002"
+      Auth__AllowedClientIds__4 = "f0f0f0f0-0000-0000-0000-000000000001"
+    }
+    error_message = "Reihenfolge: SPA, Connector, MCP-Client, dann die vorautorisierten Clients sortiert und klein geschrieben; VS Code nur, wenn es in der Liste steht."
+  }
+
+  assert {
+    condition = (
+      { for k, v in output.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") } ==
+      { for k, v in run.ohne_neue_einstellungen_wie_bisher.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") }
+    )
+    error_message = "Die übrigen App-Settings bleiben mit connector und mcp ohne eigene Domain unverändert."
+  }
+}
+
+# Die Client-IDs neuer Registrierungen entstehen erst beim Apply. Die Namen der App-Settings
+# müssen trotzdem schon im Plan feststehen, sonst wären alle App-Settings der Function unbekannt.
+run "zugelassene_clients_im_plan_bekannt" {
+  # Eigener, leerer State: Die Registrierungen der Läufe davor gibt es dort nicht, ihre
+  # Client-IDs sind im Plan also unbekannt.
+  command   = plan
+  state_key = "plan"
+
+  variables {
+    connector = true
+    mcp       = true
+  }
+
+  assert {
+    condition = sort(keys(output.app_settings)) == sort([
+      "Seed__Features__Sso", "Auth__TenantId", "Auth__ClientId", "Auth__Audience",
+      "Auth__AllowedClientIds__0", "Auth__AllowedClientIds__1", "Auth__AllowedClientIds__2", "Auth__AllowedClientIds__3",
+    ])
+    error_message = "Die Namen Auth__AllowedClientIds__0 bis __3 stehen schon im Plan fest."
+  }
+
+  assert {
+    condition     = output.app_settings.Auth__AllowedClientIds__3 == "aebc6443-996d-45c2-90f0-388ff96faa56"
+    error_message = "Vorautorisierte Clients sind schon im Plan bekannt."
+  }
 }

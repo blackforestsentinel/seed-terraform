@@ -41,7 +41,11 @@ resource "azurerm_log_analytics_workspace" "this" {
   # Schutz vor Ausreißern wie einer Log-Schleife. Ist das Limit erreicht, nimmt der Workspace
   # bis zum nächsten Tag (UTC) nichts mehr an; das Modul monitoring meldet das.
   daily_quota_gb = var.log_daily_quota_gb
-  tags           = local.tags
+  # Nur mit Entra-Token: Die Workspace-Schlüssel (Shared Keys) stehen weiter im State, gelten aber
+  # nicht mehr. Kein Seed-Modul braucht sie; Application Insights, das Audit-Log des Key Vaults
+  # und die Alarme aus monitoring laufen über Azure Monitor.
+  local_authentication_enabled = false
+  tags                         = local.tags
 }
 
 resource "azurerm_application_insights" "this" {
