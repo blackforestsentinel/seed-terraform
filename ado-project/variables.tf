@@ -91,9 +91,9 @@ variable "authorize_service_connections" {
 }
 
 variable "min_reviewers" {
-  description = "Pull Requests auf main brauchen so viele Zustimmungen anderer Personen; die eigene Stimme zählt nicht. 0: keine Pflicht. Sperrt wie pr_validation direkte Pushes auf main."
+  description = "Pull Requests auf main brauchen so viele Zustimmungen anderer Personen; die eigene Stimme zählt nicht. Standard 1, weil die Stage Plan die Service Connection vor jeder Freigabe nutzt. 0: keine Pflicht. Sperrt wie pr_validation direkte Pushes auf main."
   type        = number
-  default     = 0
+  default     = 1
 
   validation {
     condition     = var.min_reviewers >= 0 && var.min_reviewers <= 10 && floor(var.min_reviewers) == var.min_reviewers

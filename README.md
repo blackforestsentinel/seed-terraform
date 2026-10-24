@@ -116,7 +116,7 @@ module "core" {
 
 Die ausführende Identität braucht die Microsoft-Graph-Anwendungsberechtigung `Application.ReadWrite.OwnedBy` mit Admin-Consent. Sie trägt sich selbst als Besitzerin der App-Registrierungen ein und darf nur diese verwalten.
 
-Ausgaben: `app_settings` (`Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris`, `app_roles` und `directory_permissions`.
+Ausgaben: `app_settings` (das Feature-Flag `Seed__Features__Sso = "true"`, mit dem das Template `UseSeedAuth()` einschaltet, sowie `Auth__TenantId`, `Auth__ClientId`, `Auth__Audience` für `Bfs.Seed.Auth`, bei einer anderen Berechtigung als `access_as_user` zusätzlich `Auth__RequiredScope`), `frontend_config` (Auth-Teil der `config.json` für `@blackforestsentinel/seed-web-auth`, ohne SPA leer), dazu `api_client_id`, `api_scope`, `api_scope_id`, `spa_client_id` (ohne SPA `null`), `spa_redirect_uris`, `app_roles` und `directory_permissions`.
 
 #### App-Rollen und Zuweisung
 
@@ -241,7 +241,7 @@ Für ein zentrales Scaffold, das Seed-Projekte in anderen Azure-DevOps-Projekten
 - **`create_repository = false`:** Das Modul nutzt das vorhandene Repo `repository` (leer: `name`) und schreibt nur `project.yaml` und `azure-pipelines.yml`. Grund: Das Job-Token des zentralen Projekts darf unter „Protect access to repositories in YAML pipelines“ keine Repos anlegen. Die Person legt das Repo an, die Pipeline führt seed-template vorher ein.
 - **`approver_groups`:** Gruppen der Organisation, deren Mitglieder zusätzlich zu `approvers` freigeben.
 - **`requester_can_approve`** (Standard `true`): im zentralen Scaffold `false`, damit niemand die eigene Infrastruktur allein freigibt.
-- **`min_reviewers`** (Standard `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen.
+- **`min_reviewers`** (Standard `1`, bis v0.14.0 `0`): Pflicht-Reviewer auf `main`, die eigene Stimme zählt nicht. Die Stage Plan nutzt die Service Connection schon vor jeder Freigabe; ohne Review könnte eine Person ihre eigene Pipeline-Änderung mergen und so die Rechte der Deployment-Identität nutzen. Arbeitet nur eine Person am Projekt, braucht sie eine zweite für Reviews oder das Recht, Policies beim Abschließen zu umgehen; `0` schaltet die Pflicht ab.
 - **`pool`:** Agent-Pool der Projekt-Pipeline, ab `pipelines_version` v0.13.0; das Modul berechtigt die Pipeline für dessen Queue, sonst fragte der erste Lauf danach („Permit“).
 - **Output `project_id`:** startet den ersten Lauf im anderen Projekt.
 

@@ -26,11 +26,12 @@ variables {
 run "ohne_neue_einstellungen_wie_bisher" {
   assert {
     condition = output.app_settings == {
-      Auth__TenantId = "11111111-1111-1111-1111-111111111111"
-      Auth__ClientId = "33333333-3333-3333-3333-333333333333"
-      Auth__Audience = "api://33333333-3333-3333-3333-333333333333"
+      Seed__Features__Sso = "true"
+      Auth__TenantId      = "11111111-1111-1111-1111-111111111111"
+      Auth__ClientId      = "33333333-3333-3333-3333-333333333333"
+      Auth__Audience      = "api://33333333-3333-3333-3333-333333333333"
     }
-    error_message = "app_settings dürfen sich ohne neue Einstellungen nicht ändern."
+    error_message = "app_settings: Feature-Flag und die bisherigen Auth-Settings, ohne neue Einstellungen nichts weiter."
   }
 
   assert {
@@ -373,6 +374,7 @@ run "vorhandene_registrierung_aus_anderem_tenant" {
 
   assert {
     condition = output.app_settings == {
+      Seed__Features__Sso = "true"
       Auth__TenantId      = "44444444-4444-4444-4444-444444444444"
       Auth__ClientId      = "55555555-5555-5555-5555-555555555555"
       Auth__Audience      = "https://api.kunde.example"
