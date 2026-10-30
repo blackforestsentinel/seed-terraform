@@ -9,11 +9,12 @@
 # für die Berechtigung zulässt (README).
 
 variable "directory" {
-  description = "Personen-Komponenten im Frontend. enabled trägt die delegierten Graph-Berechtigungen User.Read, User.ReadBasic.All und People.Read an der SPA-Registrierung ein, presence zusätzlich Presence.Read.All (Teams-Status), role_filter Application.Read.All und GroupMember.Read.All (Personenauswahl nur mit App-Rolle, braucht Administratorzustimmung). presence und role_filter wirken nur mit enabled; enabled = false schaltet alles ab, etwa je Umgebung. frontend_config nennt die Scopes unter auth.directory. Bei existing_registration legt das Modul nichts an; die Ausgabe directory_permissions nennt, was der Admin des anderen Tenants einträgt."
+  description = "Personen-Komponenten im Frontend. enabled trägt die delegierten Graph-Berechtigungen User.Read, User.ReadBasic.All und People.Read an der SPA-Registrierung ein, presence zusätzlich Presence.Read.All (Teams-Status), role_filter Application.Read.All und GroupMember.Read.All (Personenauswahl nur mit App-Rolle, braucht Administratorzustimmung), service_principals Application.Read.All (Anwendungen und verwaltete Identitäten suchen und anzeigen, braucht Administratorzustimmung). presence, role_filter und service_principals wirken nur mit enabled; enabled = false schaltet alles ab, etwa je Umgebung. frontend_config nennt die Scopes unter auth.directory. Bei existing_registration legt das Modul nichts an; die Ausgabe directory_permissions nennt, was der Admin des anderen Tenants einträgt."
   type = object({
-    enabled     = optional(bool, false)
-    presence    = optional(bool, false)
-    role_filter = optional(bool, false)
+    enabled            = optional(bool, false)
+    presence           = optional(bool, false)
+    role_filter        = optional(bool, false)
+    service_principals = optional(bool, false)
   })
   default  = {}
   nullable = false
@@ -35,26 +36,32 @@ locals {
   }
 
   # Die Berechtigungen je Schalter, in der Reihenfolge von frontend_config. enabled ist der
-  # Hauptschalter: Ein Override wie enabled = false für eine Umgebung schaltet auch presence und
-  # role_filter aus, ohne dass sie mit zurückgesetzt werden müssen.
-  directory_scope_names = concat(
+  # Hauptschalter: Ein Override wie enabled = false für eine Umgebung schaltet auch presence,
+  # role_filter und service_principals aus, ohne dass sie mit zurückgesetzt werden müssen.
+  # role_filter und service_principals teilen sich Application.Read.All.
+  directory_scope_names = distinct(concat(
     var.directory.enabled ? ["User.Read", "User.ReadBasic.All", "People.Read"] : [],
     var.directory.enabled && var.directory.presence ? ["Presence.Read.All"] : [],
     var.directory.enabled && var.directory.role_filter ? ["Application.Read.All", "GroupMember.Read.All"] : [],
-  )
+    var.directory.enabled && var.directory.service_principals ? ["Application.Read.All"] : [],
+  ))
 
   # Ohne Frontend ruft niemand Graph auf; dann bleibt alles aus.
   directory = var.directory.enabled && local.spa
 
   # Teil von frontend_config.auth für seed-web-people, eingebunden in outputs.tf. apiClientId
-  # nennt die API-Registrierung, deren Rollenzuweisungen der Filter liest.
+  # nennt die API-Registrierung, deren Rollenzuweisungen der Filter liest. servicePrincipals steht
+  # nur drin, wenn es an ist; so bleibt config.json bestehender Projekte gleich.
   directory_frontend_config = {
-    for key in local.directory ? ["directory"] : [] : key => {
-      scopes      = [for name in local.directory_scope_names : "https://graph.microsoft.com/${name}"]
-      presence    = var.directory.presence
-      roleFilter  = var.directory.role_filter
-      apiClientId = local.api_client_id
-    }
+    for key in local.directory ? ["directory"] : [] : key => merge(
+      {
+        scopes      = [for name in local.directory_scope_names : "https://graph.microsoft.com/${name}"]
+        presence    = var.directory.presence
+        roleFilter  = var.directory.role_filter
+        apiClientId = local.api_client_id
+      },
+      { for flag in var.directory.service_principals ? ["servicePrincipals"] : [] : flag => true },
+    )
   }
 }
 
@@ -70,7 +77,8 @@ output "directory_permissions" {
         admin_consent = local.msgraph_directory_scopes[name].admin
       }
     ]
-    # Mit role_filter immer, sonst je nach Einwilligungseinstellungen des Tenants (README).
+    # Mit role_filter oder service_principals immer, sonst je nach Einwilligungseinstellungen
+    # des Tenants (README).
     admin_consent_required = anytrue([for name in local.directory_scope_names : local.msgraph_directory_scopes[name].admin])
     # Von einem Admin des Tenants auszuführen; im Portal: App-Registrierungen → SPA →
     # API-Berechtigungen → „Administratorzustimmung erteilen“.

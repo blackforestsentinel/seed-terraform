@@ -161,6 +161,48 @@ run "verzeichnis_mit_presence_und_rollenfilter" {
   }
 }
 
+run "verzeichnis_mit_service_principals" {
+  variables {
+    directory = { enabled = true, service_principals = true }
+  }
+
+  assert {
+    condition = output.frontend_config.auth.directory.scopes == [
+      "https://graph.microsoft.com/User.Read",
+      "https://graph.microsoft.com/User.ReadBasic.All",
+      "https://graph.microsoft.com/People.Read",
+      "https://graph.microsoft.com/Application.Read.All",
+    ] && output.frontend_config.auth.directory.servicePrincipals
+    error_message = "service_principals bringt Application.Read.All und servicePrincipals = true in frontend_config."
+  }
+
+  assert {
+    condition     = output.directory_permissions.admin_consent_required
+    error_message = "Application.Read.All braucht Administratorzustimmung."
+  }
+}
+
+run "verzeichnis_mit_rollenfilter_und_service_principals" {
+  variables {
+    directory = { enabled = true, role_filter = true, service_principals = true }
+  }
+
+  assert {
+    condition = [for p in output.directory_permissions.permissions : p.value] == [
+      "User.Read", "User.ReadBasic.All", "People.Read", "Application.Read.All", "GroupMember.Read.All",
+    ]
+    error_message = "role_filter und service_principals tragen Application.Read.All nur einmal ein."
+  }
+
+  assert {
+    condition = [
+      for r in azuread_application.spa[0].required_resource_access : length(r.resource_access)
+      if r.resource_app_id == "00000003-0000-0000-c000-000000000000"
+    ] == [5]
+    error_message = "An der SPA steht jede Graph-Berechtigung genau einmal."
+  }
+}
+
 run "verzeichnis_mit_vorhandener_registrierung" {
   variables {
     existing_registration = {
@@ -209,12 +251,12 @@ run "verzeichnis_ohne_frontend" {
 
 run "verzeichnis_aus_trotz_weiterer_schalter" {
   variables {
-    directory = { enabled = false, presence = true, role_filter = true }
+    directory = { enabled = false, presence = true, role_filter = true, service_principals = true }
   }
 
   assert {
     condition     = length([for r in azuread_application.spa[0].required_resource_access : r if r.resource_app_id == "00000003-0000-0000-c000-000000000000"]) == 0
-    error_message = "enabled = false schaltet alles ab, auch presence und role_filter (Override je Umgebung)."
+    error_message = "enabled = false schaltet alles ab, auch presence, role_filter und service_principals (Override je Umgebung)."
   }
 
   assert {
