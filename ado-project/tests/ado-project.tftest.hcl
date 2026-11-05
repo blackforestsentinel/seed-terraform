@@ -241,6 +241,11 @@ run "project_yaml_mit_owner" {
     condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).owner == "team@example.org"
     error_message = "project.yaml bleibt gültiges YAML, owner ist ein Schlüssel der obersten Ebene."
   }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).auth.assignmentRequired == true
+    error_message = "Neue Projekte verlangen die Zuweisung einer Rolle."
+  }
 }
 
 run "owner_nur_als_mail" {

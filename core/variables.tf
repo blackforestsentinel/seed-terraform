@@ -88,9 +88,18 @@ variable "app_settings" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Zusätzliche CORS-Origins. Die URL der Static Web App und die eigenen Domains sind immer freigegeben."
+  description = "Zusätzliche CORS-Origins, einzeln, z. B. https://www.example.org. Die URL der Static Web App und die eigenen Domains sind immer freigegeben. Ein * lehnt das Modul ab."
   type        = list(string)
   default     = []
+  nullable    = false
+
+  # Mit * dürfte jede Website die API aus dem Browser aufrufen und die Antworten lesen. Das gilt
+  # auch für Platzhalter wie https://*.example.org: Jede Subdomain wäre freigegeben, auch eine
+  # übernommene oder fremd gehostete.
+  validation {
+    condition     = alltrue([for origin in var.cors_allowed_origins : !strcontains(origin, "*")])
+    error_message = "cors_allowed_origins: kein *, sonst dürfte jede Website die API aus dem Browser aufrufen. Origins einzeln angeben, z. B. https://www.example.org."
+  }
 }
 
 variable "log_retention_days" {

@@ -52,8 +52,8 @@ run "ohne_neue_einstellungen_wie_bisher" {
   }
 
   assert {
-    condition     = length(azuread_application_app_role.api) == 0 && azuread_service_principal.api[0].app_role_assignment_required == false
-    error_message = "Ohne app_roles keine Rollen und keine Zuweisungspflicht."
+    condition     = length(azuread_application_app_role.api) == 0 && azuread_service_principal.api[0].app_role_assignment_required == true
+    error_message = "Ohne app_roles keine Rollen; die Zuweisungspflicht ist ab v0.17.0 Standard."
   }
 
   assert {
@@ -758,4 +758,30 @@ run "owner_nur_als_mail" {
   }
 
   expect_failures = [var.owner]
+}
+
+run "zuweisung_ausdruecklich_aus" {
+  command = plan
+
+  variables {
+    assignment_required = false
+  }
+
+  assert {
+    condition     = azuread_service_principal.api[0].app_role_assignment_required == false
+    error_message = "assignment_required = false schaltet die Zuweisungspflicht ab."
+  }
+}
+
+run "zuweisung_null_bleibt_an" {
+  command = plan
+
+  variables {
+    assignment_required = null
+  }
+
+  assert {
+    condition     = azuread_service_principal.api[0].app_role_assignment_required == true
+    error_message = "null gilt als Default true, nicht als false."
+  }
 }

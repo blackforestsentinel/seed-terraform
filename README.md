@@ -71,7 +71,7 @@ Konvention: Das Modul setzt die App-Settings `Seed__Project` und `Seed__Environm
 
 Key-Vault-Referenzen (`@Microsoft.KeyVault(...)`) in `app_settings` löst die Plattform mit der UAMI der Function auf (`keyVaultReferenceIdentity`); die Leserechte vergibt das Modul [`keyvault`](keyvault/README.md). Ab dieser Version zeigt der erste Plan nach dem Update dafür einmal eine Änderung an der Function App.
 
-CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu.
+CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu, ohne Credentials. Ab v0.17.0 lehnt das Modul ein `*` in `cors_allowed_origins` ab, auch als Platzhalter wie `https://*.example.org`: Jede Website, bzw. jede Subdomain, dürfte die API sonst aus dem Browser aufrufen und die Antworten lesen. Origins einzeln angeben. Das Template lässt schon bisher nur einzelne Origins zu.
 
 #### Telemetrie ohne Schlüssel
 
@@ -177,7 +177,9 @@ module "sso" {
 
 Personen und Gruppen weist ein Admin in Entra zu (Enterprise App `<projekt>-<umgebung>-api`, „Benutzer und Gruppen“). Die Pipeline kann das nicht: Zuweisungen über Graph verlangen `AppRoleAssignment.ReadWrite.All`, `Application.ReadWrite.OwnedBy` reicht dafür nicht. Gruppen werden nicht verschachtelt aufgelöst; zugewiesen wird die Gruppe, in der die Personen direkt Mitglied sind.
 
-`assignment_required = true` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Default ist `false`, dann kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities.
+`assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Ohne `app_roles` weist der Admin der Standardrolle („Standardzugriff“) zu. Mit `false` kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities; eine Function ohne `[RequireCapability]` stünde ihm offen.
+
+Default ist ab v0.17.0 `true` (bis v0.16.0 `false`); `null` gilt als Default. Umstieg: Wer das Modul ohne `assignment_required` einbindet, sieht im nächsten Plan eine Änderung am Service Principal der API an Ort und Stelle. Danach bekommt nur noch ein Token, wer eine Rolle hat; vor dem Update also Personen und Gruppen in Entra zuweisen oder `assignment_required = false` setzen. Das Template übergibt den Wert aus `auth.assignmentRequired` in `project.yaml` ausdrücklich; für seine Projekte ändert sich dadurch nichts.
 
 #### Bridge-Seite für die stille Anmeldung
 
@@ -219,7 +221,7 @@ Was der Admin im anderen Tenant einrichtet:
 2. **API-Registrierung** mit Application ID URI (`audience`) und einer delegierten Berechtigung (`api_scope`).
 3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
 4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
-5. **Zuweisungen** von Personen und Gruppen zu den Rollen, bei Bedarf „Zuweisung erforderlich“ an der Enterprise App der API.
+5. **Zuweisungen** von Personen und Gruppen zu den Rollen und „Zuweisung erforderlich“ an der Enterprise App der API. Das Modul setzt es bei eigenen Registrierungen als Standard; eine vorhandene erreicht es nicht.
 6. **Mit `directory`:** die Graph-Berechtigungen an der SPA-Registrierung und die Zustimmung, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
 
 #### Personen und Profilbilder (Microsoft Graph)
@@ -274,7 +276,7 @@ Ausgabe `directory_permissions`: `tenant_id`, `spa_client_id`, `permissions` (je
 
 ### ado-project
 
-Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines).
+Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines). Die erzeugte `project.yaml` setzt ab v0.17.0 `auth.assignmentRequired: true` und mit `owner` den Besitzer.
 
 PR-Validierung (`pr_validation`, Standard `true`): eine Branch-Policy auf `main`, nach der Pull Requests einen erfolgreichen Lauf der Projekt-Pipeline brauchen. Die Pipeline erkennt PR-Läufe selbst und baut, testet und sucht dann nur nach Secrets, ohne Deploy und ohne Service Connection; eine zweite Pipeline-Definition ist nicht nötig. Ein Ergebnis gilt 12 Stunden, auch wenn sich `main` ändert. Die Policy ist Pflicht und sperrt damit direkte Pushes auf `main`; sie entsteht deshalb erst nach den Dateien, die das Modul direkt auf `main` schreibt.
 

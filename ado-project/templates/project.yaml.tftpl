@@ -42,8 +42,10 @@ auth:
       # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
       memberTypes: [User]
       capabilities: [settings.manage, status.read]
-  # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
-  assignmentRequired: false
+  # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token. Ein
+  # Admin weist sie in Entra zu (Enterprise App <project>-<umgebung>-api). false: Jedes Konto des
+  # Tenants meldet sich an und bekommt ohne Rolle nur keine Capabilities.
+  assignmentRequired: true
   # Personen-Komponenten im Frontend (seed-web-people): Profilbilder, Personensuche und
   # Teams-Status kommen mit dem Token der angemeldeten Person direkt aus Microsoft Graph.
   # Terraform trägt die Berechtigungen an der App-Registrierung des Frontends ein, zustimmen muss

@@ -88,3 +88,42 @@ run "owner_nur_als_mail" {
 
   expect_failures = [var.owner]
 }
+
+run "cors_mit_stern_abgelehnt" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["*"]
+  }
+
+  expect_failures = [var.cors_allowed_origins]
+}
+
+run "cors_mit_platzhalter_abgelehnt" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["https://www.example.org", "https://*.example.org"]
+  }
+
+  expect_failures = [var.cors_allowed_origins]
+}
+
+run "cors_einzelne_origins" {
+  command = plan
+
+  variables {
+    static_web_app_sku   = "None"
+    cors_allowed_origins = ["https://www.example.org", "http://localhost:5173"]
+  }
+
+  assert {
+    condition     = azapi_resource.function_app.body.properties.siteConfig.cors.allowedOrigins == ["https://www.example.org", "http://localhost:5173"]
+    error_message = "Einzelne Origins übernimmt das Modul unverändert."
+  }
+
+  assert {
+    condition     = azapi_resource.function_app.body.properties.siteConfig.cors.supportCredentials == false
+    error_message = "CORS ohne Credentials."
+  }
+}
