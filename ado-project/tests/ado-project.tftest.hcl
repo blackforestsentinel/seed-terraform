@@ -264,10 +264,11 @@ run "project_yaml_wie_im_template" {
       yamldecode(azuredevops_git_repository_file.project_yaml.content).features == { sso = true, mcp = false, storage = true, keyVault = false, customConnector = false },
       yamldecode(azuredevops_git_repository_file.project_yaml.content).hosting == { staticWebApp = "none", customDomains = [], corsAllowedOrigins = [] },
       yamldecode(azuredevops_git_repository_file.project_yaml.content).auth.assignmentRequired == true,
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).auth.roles.Admin.capabilities == ["settings.manage", "status.read", "jobs.run"],
       yamldecode(azuredevops_git_repository_file.project_yaml.content).monitoring.recipients == [],
       yamldecode(azuredevops_git_repository_file.project_yaml.content).storage.deletionLock == true,
     ])
-    error_message = "project.yaml hat die Schlüssel und Standardwerte des Templates, mit Features und Frontend aus den Variablen."
+    error_message = "project.yaml hat die Schlüssel und Standardwerte des Templates, mit Features und Frontend aus den Variablen; Admin hat jobs.run für das Beispiel CreateJob und GetJob."
   }
 
   assert {
@@ -284,8 +285,11 @@ run "pipeline_ohne_connector_parameter_bei_alter_version" {
   state_key = "scaffold_files"
 
   assert {
-    condition     = !strcontains(azuredevops_git_repository_file.pipeline.content, "allowBreakingConnectorChanges") && !strcontains(azuredevops_git_repository_file.pipeline.content, "checkConnectorConnections")
-    error_message = "Vor seed-pipelines v0.17.0 keine Connector-Parameter; ältere Versionen lehnen sie ab."
+    condition = alltrue([
+      for text in ["allowBreakingConnectorChanges", "checkConnectorConnections", "treatWarningsAsErrors"] :
+      !strcontains(azuredevops_git_repository_file.pipeline.content, text)
+    ])
+    error_message = "Vor seed-pipelines v0.17.0 keine neuen Parameter, auch nicht auskommentiert; ältere Versionen lehnen sie ab."
   }
 
   assert {
@@ -320,6 +324,11 @@ run "pipeline_mit_connector_parametern" {
   assert {
     condition     = strcontains(azuredevops_git_repository_file.pipeline.content, "\n    # checkConnectorConnections: true\n") && !contains(keys(yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters), "checkConnectorConnections")
     error_message = "checkConnectorConnections steht nur auskommentiert da (Opt-in)."
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.pipeline.content, "\n    # treatWarningsAsErrors: false\n") && !contains(keys(yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters), "treatWarningsAsErrors")
+    error_message = "treatWarningsAsErrors bleibt beim Standard true und steht nur auskommentiert da."
   }
 }
 

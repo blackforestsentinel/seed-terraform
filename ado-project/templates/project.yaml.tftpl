@@ -2,7 +2,8 @@
 project: ${name}
 
 # Besitzer des Projekts: E-Mail-Adresse eines Teams oder Verteilers, z. B. team@example.org.
-# Terraform setzt sie als Tag owner an alle Ressourcen, Alarme nennen sie als Ansprechpartner.
+# Terraform setzt sie als Tag owner an alle Azure-Ressourcen und als Notiz an die
+# App-Registrierungen; sie bekommt alle Alarme, auch vor dem Ablauf von Secrets. Leer: nichts davon.
 %{ if owner != null ~}
 owner: ${jsonencode(owner)}
 %{ else ~}
@@ -48,7 +49,7 @@ auth:
       description: Verwaltet die Anwendung
       # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
       memberTypes: [User]
-      capabilities: [settings.manage, status.read]
+      capabilities: [settings.manage, status.read, jobs.run]
   # Zuweisung erforderlich (Standard): Nur Personen, Gruppen und Anwendungen, denen ein Admin in
   # Entra eine Rolle zugewiesen hat, bekommen ein Token; bis dahin kommt niemand herein. Mit false
   # bekommt jedes Konto des Tenants eines: Functions mit [RequireCapability] lehnen es ohne Rolle
@@ -101,7 +102,8 @@ auth:
 
 monitoring:
   # Empfänger von Alarmen und Budget-Warnungen (Adresse oder Verteiler), z. B.
-  # [betrieb@example.org]. Ohne Empfänger gibt es keine Alarme und kein Budget.
+  # [betrieb@example.org], zusätzlich zu owner. Ohne Empfänger und ohne owner gibt es keine
+  # Alarme und kein Budget.
   recipients: []
   # Monatsbudget der Resource Group je Umgebung in der Abrechnungswährung, z. B.
   # { dev: 20, prod: 100 }. Warnung bei 80 % und wenn die Prognose den Betrag übersteigt.
@@ -158,11 +160,11 @@ storage:
 # Ausnahmen von den Prüfungen im Build der Pipeline, jede nur mit Begründung (reason). Sie steht so
 # im Pull Request und im Log. Beispiel:
 # build:
-#   # Vorabversion eines NuGet-Pakets (Paket-ID); ohne Eintrag bricht der Build ab
+#   # Vorabversion eines direkt referenzierten NuGet-Pakets (Paket-ID); sonst bricht der Build ab
 #   prereleasePackages:
 #     - name: Some.Package
 #       reason: Behebt einen Fehler, den das Projekt braucht; die stabile Version fehlt noch
-#   # Bekannte Sicherheitslücke in einem Paket bewusst hinnehmen (ID der Advisory)
+#   # Bekannte Sicherheitslücke (High, Critical) bewusst hinnehmen: GHSA-ID oder URL der Advisory
 #   ignoreAdvisories:
 #     - id: GHSA-xxxx-xxxx-xxxx
 #       reason: Die betroffene Funktion nutzt das Projekt nicht

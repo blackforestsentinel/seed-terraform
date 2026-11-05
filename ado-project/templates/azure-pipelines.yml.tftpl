@@ -16,7 +16,7 @@ parameters:
     displayName: Datenlöschung bestätigen (Storage, Key Vault, Logs)
     type: boolean
     default: false
-%{ if connector_checks ~}
+%{ if pipelines_v017 ~}
   # Nur mit features.customConnector: Entfernt der Lauf eine Operation des Custom Connectors oder
   # ändert sie so, dass Flows brechen, die sie nutzen, endet er sonst vor dem Deploy. Angekreuzt
   # werden die Fehler zu Warnungen, etwa wenn der betroffene Flow ohnehin abgeschaltet wird.
@@ -28,6 +28,7 @@ parameters:
 
 resources:
   repositories:
+    # Der Name seed ist fest: Die Pipeline liest darüber ihre eigenen Skripte und Versionen.
     - repository: seed
       type: github
       name: blackforestsentinel/seed-pipelines
@@ -54,7 +55,10 @@ extends:
       storageAccount: ${terraform_state.storage_account}
       container: ${terraform_state.container}
     confirmDataDeletion: $${{ parameters.confirmDataDeletion }}
-%{ if connector_checks ~}
+%{ if pipelines_v017 ~}
+    # Warnungen von Compiler, Analyzern und MSBuild brechen den Build (Standard). Abschalten nur
+    # vorübergehend und mit Begründung im PR:
+    # treatWarningsAsErrors: false
     allowBreakingConnectorChanges: $${{ parameters.allowBreakingConnectorChanges }}
     # Nur mit features.customConnector, Opt-in: prüft, ob die Konten der Verbindungen zum Connector
     # eine Rolle aus auth.roles haben, und warnt sonst. Die Pipeline-Identität braucht dafür
