@@ -223,7 +223,8 @@ locals {
   }
 }
 
-# Je Vault gibt es höchstens ein System-Topic; es liegt in der Region des Vaults.
+# Azure erlaubt je Vault höchstens ein System-Topic, und es muss in der Region des Vaults liegen;
+# location ist hier dieselbe wie im Modul keyvault.
 resource "azurerm_eventgrid_system_topic" "key_vault" {
   for_each = var.key_vault_ids
 
