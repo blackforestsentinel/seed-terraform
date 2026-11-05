@@ -9,6 +9,14 @@ mock_provider "azurerm" {
       object_id       = "33333333-3333-3333-3333-333333333333"
     }
   }
+
+  # Der Provider prüft Ressourcen-IDs auch gegen den Mock; deshalb echte Formen.
+  mock_resource "azurerm_key_vault" {
+    defaults = {
+      id        = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-example-dev/providers/Microsoft.KeyVault/vaults/kv-example-dev-abc123"
+      vault_uri = "https://kv-example-dev-abc123.vault.azure.net/"
+    }
+  }
 }
 
 mock_provider "azapi" {}
@@ -55,4 +63,44 @@ run "owner_nur_als_mail" {
   }
 
   expect_failures = [var.owner]
+}
+
+run "app_settings_mit_vault_uri" {
+  variables {
+    secrets = ["stripe-key"]
+  }
+
+  assert {
+    condition = output.app_settings == {
+      Secrets__StripeKey = "@Microsoft.KeyVault(VaultName=${output.key_vault_name};SecretName=stripe-key)"
+      Seed__KeyVaultUri  = "https://kv-example-dev-abc123.vault.azure.net/"
+    }
+    error_message = "app_settings: Referenz je Secret und Seed__KeyVaultUri mit der URI des Vaults."
+  }
+}
+
+# Folgt auf den Apply oben: Bei einem vorhandenen Vault steht die URI im State, der Plan kennt sie
+# also, und die App-Settings der Function sind nicht erst nach dem Apply bekannt.
+run "vault_uri_im_plan_bekannt" {
+  command = plan
+
+  variables {
+    secrets = ["stripe-key"]
+  }
+
+  assert {
+    condition     = output.app_settings["Seed__KeyVaultUri"] == "https://kv-example-dev-abc123.vault.azure.net/"
+    error_message = "Bei einem vorhandenen Vault ist Seed__KeyVaultUri schon beim Plan bekannt."
+  }
+}
+
+run "ohne_secrets_nur_vault_uri" {
+  variables {
+    secrets = []
+  }
+
+  assert {
+    condition     = output.app_settings == { Seed__KeyVaultUri = "https://kv-example-dev-abc123.vault.azure.net/" }
+    error_message = "Auch ohne Secrets nennt app_settings den Vault."
+  }
 }
