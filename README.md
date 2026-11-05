@@ -19,7 +19,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights und Log Analytics (Tageslimit) ohne lokale Authentifizierung, Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, Liste der zugelassenen Clients für `Bfs.Seed.Auth`, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
-| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
+| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs, Ablauf von Secrets im Key Vault) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
@@ -348,10 +348,11 @@ Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Detai
 ```hcl
 module "monitoring" {
   source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
-  count  = length(local.alert_emails) > 0 ? 1 : 0
+  count  = length(local.alert_emails) > 0 || local.owner != null ? 1 : 0
 
   name                       = local.cfg.project
   environment                = var.environment
+  owner                      = local.owner
   resource_group_name        = module.core.resource_group_name
   resource_group_id          = module.core.resource_group_id
   location                   = module.core.location
@@ -360,8 +361,11 @@ module "monitoring" {
   alert_emails               = local.alert_emails
   health_check_url           = "${module.core.function_app_url}/api/health"
   budget_amount              = 20
+  key_vault_ids              = { for m in module.keyvault : "keyvault" => m.key_vault_id }
 }
 ```
+
+Mit `key_vault_ids` meldet das Modul, wenn ein Secret mit Ablaufdatum in 30 Tagen abläuft und wenn es abgelaufen ist (Event Grid mit dem Ziel „Azure Monitor alert“, ohne eigenen Code). Dafür muss der Ressourcenanbieter `Microsoft.EventGrid` registriert sein; Details in [monitoring/README.md](monitoring/README.md#ablauf-von-secrets).
 
 Bis v0.12.0 rief ein Webtest den Health-Endpunkt alle 15 Minuten aus zwei Standorten auf. Seit v0.13.0 übernimmt das eine Logic App, standardmäßig alle 4 Stunden (`health_check_interval_hours`); `health_check_frequency` und `health_check_locations` entfallen. Beim Umstieg entfernt der Apply den Webtest und ersetzt den Alarm `alert-…-health` durch `alert-…-health-check`.
 

@@ -100,6 +100,23 @@ variable "budget_amount" {
   }
 }
 
+variable "key_vault_ids" {
+  description = "Key Vaults, deren Secrets mit Ablaufdatum einen Alarm auslösen: 30 Tage vor dem Ablauf (Schweregrad 2) und beim Ablauf (Schweregrad 1). Schlüssel: kurzer Name, Teil der Ressourcennamen, z. B. keyvault; Wert: Ressourcen-ID des Vaults (Output key_vault_id von keyvault). Die Vaults liegen in location. Leer: kein Alarm."
+  type        = map(string)
+  default     = {}
+  nullable    = false
+
+  validation {
+    condition     = alltrue([for k in keys(var.key_vault_ids) : can(regex("^[a-z0-9]([a-z0-9-]{0,22}[a-z0-9])?$", k))])
+    error_message = "key_vault_ids: Schlüssel aus Kleinbuchstaben, Ziffern und Bindestrichen, höchstens 24 Zeichen, z. B. keyvault."
+  }
+
+  validation {
+    condition     = alltrue([for id in values(var.key_vault_ids) : can(regex("(?i)^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/Microsoft\\.KeyVault/vaults/[^/]+$", id))])
+    error_message = "key_vault_ids: Werte sind Ressourcen-IDs von Key Vaults (/subscriptions/…/providers/Microsoft.KeyVault/vaults/<name>)."
+  }
+}
+
 variable "tags" {
   description = "Zusätzliche Tags für alle Ressourcen."
   type        = map(string)

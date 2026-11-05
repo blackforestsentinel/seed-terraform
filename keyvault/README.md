@@ -111,6 +111,10 @@ Key-Vault-Referenzen funktionieren auf Flex Consumption, wenn `keyVaultReference
 
 Den Status jeder Referenz zeigt `GET …/config/configreferences/appsettings?api-version=2022-03-01` (`Resolved`, `SecretNotFound`, `AccessToKeyVaultDenied` …); jedes Setting erscheint dort zusätzlich als `APPSETTING_<Name>`. Einen Platzhalter meldet ARM als `Resolved`; den erkennt erst `Bfs.Seed.Functions.Core`.
 
+## Ablaufdatum
+
+Ein Secret darf ein Ablaufdatum tragen (`az keyvault secret set … --expires 2027-06-30T00:00:00Z` oder `az keyvault secret set-attributes … --expires …`); Seed erzwingt keines. Key Vault liefert ein abgelaufenes Secret weiter aus, das Datum ist ein Hinweis für Menschen. Das Modul [`monitoring`](../monitoring/README.md#ablauf-von-secrets) meldet mit `key_vault_ids = { for m in module.keyvault : "keyvault" => m.key_vault_id }` 30 Tage vor dem Ablauf und beim Ablauf an seine Empfänger. Ein neuer Wert ohne `--expires` hat kein Ablaufdatum mehr.
+
 ## Soft Delete und Purge-Schutz
 
 Beides ist immer an. Ein gelöschter Vault und jedes gelöschte Secret bleiben bis zum Ende der Frist wiederherstellbar; vorher kann niemand sie endgültig entfernen, auch kein Owner.

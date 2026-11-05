@@ -196,6 +196,76 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "daily_cap" {
   }
 }
 
+# --- Ablauf von Secrets ---------------------------------------------------------
+
+# Key Vault meldet über Event Grid, wenn die aktuelle Version eines Secrets in 30 Tagen abläuft
+# (fest, nicht einstellbar) und wenn sie abgelaufen ist. Event Grid macht daraus direkt einen Alarm
+# in Azure Monitor an die Aktionsgruppe, ohne Logic App oder eigenen Code dazwischen. Ein Secret
+# ohne Ablaufdatum löst nichts aus; Seed erzwingt keines.
+locals {
+  secret_expiry_events = {
+    secret-near-expiry = {
+      event_type  = "Microsoft.KeyVault.SecretNearExpiry"
+      severity    = "Sev2"
+      description = "${local.base}: Ein Secret im Key Vault läuft in 30 Tagen ab. Welches, steht in den Details des Alarms (ObjectName, EXP). Neuen Wert beschaffen und mit neuem Ablaufdatum setzen: az keyvault secret set --expires."
+    }
+    secret-expired = {
+      event_type  = "Microsoft.KeyVault.SecretExpired"
+      severity    = "Sev1"
+      description = "${local.base}: Ein Secret im Key Vault ist abgelaufen. Key Vault liefert es weiter aus, beim Anbieter gilt es aber meist nicht mehr. Welches, steht in den Details des Alarms (ObjectName). Neuen Wert setzen: az keyvault secret set --expires."
+    }
+  }
+
+  # Je Vault und Ereignis ein Abonnement, z. B. keyvault/secret-near-expiry.
+  secret_expiry_subscriptions = {
+    for pair in setproduct(keys(var.key_vault_ids), keys(local.secret_expiry_events)) :
+    "${pair[0]}/${pair[1]}" => { vault = pair[0], event = pair[1] }
+  }
+}
+
+# Je Vault gibt es höchstens ein System-Topic; es liegt in der Region des Vaults.
+resource "azurerm_eventgrid_system_topic" "key_vault" {
+  for_each = var.key_vault_ids
+
+  name                = "egst-${local.base}-${each.key}"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  source_resource_id  = each.value
+  topic_type          = "Microsoft.KeyVault.vaults"
+  tags                = local.tags
+}
+
+# azapi, weil azurerm (bis 5.x) das Ziel „Azure Monitor alert“ nicht kennt. Dieses Ziel nimmt nur
+# Ereignisse im CloudEvents-Schema an.
+resource "azapi_resource" "secret_expiry" {
+  for_each = local.secret_expiry_subscriptions
+
+  type      = "Microsoft.EventGrid/systemTopics/eventSubscriptions@2025-02-15"
+  name      = each.value.event
+  parent_id = azurerm_eventgrid_system_topic.key_vault[each.value.vault].id
+
+  body = {
+    properties = {
+      eventDeliverySchema = "CloudEventSchemaV1_0"
+      filter = {
+        includedEventTypes = [local.secret_expiry_events[each.value.event].event_type]
+      }
+      destination = {
+        endpointType = "MonitorAlert"
+        properties = {
+          severity     = local.secret_expiry_events[each.value.event].severity
+          description  = local.secret_expiry_events[each.value.event].description
+          actionGroups = [azurerm_monitor_action_group.this.id]
+        }
+      }
+    }
+  }
+
+  # Azure kann die ID der Aktionsgruppe in anderer Schreibweise zurückgeben; ohne das zeigte jeder
+  # Plan eine Änderung, und die Pipeline verlangte jedes Mal eine Freigabe.
+  ignore_casing = true
+}
+
 # --- Budget ---------------------------------------------------------------------
 
 # Für alle Kosten der Resource Group, also das ganze Projekt in dieser Umgebung. Azure
