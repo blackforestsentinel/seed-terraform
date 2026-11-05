@@ -13,6 +13,17 @@ variable "name" {
   }
 }
 
+variable "owner" {
+  description = "Besitzer und Ansprechpartner des Projekts als E-Mail-Adresse, z. B. team@example.org; steht als owner in project.yaml. null: nur ein auskommentiertes Beispiel."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.owner == null || can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", var.owner))
+    error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org."
+  }
+}
+
 variable "features" {
   description = "Feature-Auswahl für project.yaml."
   type = object({

@@ -148,6 +148,6 @@ Eine Datenrolle auf dem Vault braucht die ausführende Identität nicht.
 
 ## Ein- und Ausgaben
 
-Eingaben: `name`, `environment`, `resource_group_name`, `location`, `function_identity_principal_id`, `secrets`, `secret_officers`, `soft_delete_retention_days` (Default 90), `tags`.
+Eingaben: `name`, `environment`, `resource_group_name`, `location`, `function_identity_principal_id`, `secrets`, `secret_officers`, `soft_delete_retention_days` (Default 90), `audit_logs`, `owner` (Tag `owner` am Vault, siehe [README des Repos](../README.md#besitzer-owner)), `tags`.
 
 Ausgaben: `app_settings` (`Secrets__<Name>` als Referenz, erst nach Rolle und Platzhaltern), `references` (Referenz je Secret-Name), `setting_names` (App-Setting je Secret-Name), `key_vault_name`, `key_vault_uri`, `key_vault_id`.

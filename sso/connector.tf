@@ -27,6 +27,7 @@ resource "azuread_application" "connector" {
   # Die Managed Identity des Connectors funktioniert nur mit single-tenant-Registrierungen.
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
+  notes            = local.notes
 
   # Deklariert, damit die Registrierung zeigt, wofür sie ist; eine Zustimmung braucht es nicht,
   # der Client ist unten vorautorisiert.
@@ -51,6 +52,7 @@ resource "azuread_service_principal" "connector" {
 
   client_id = azuread_application.connector[0].client_id
   owners    = local.owners
+  notes     = local.notes
 }
 
 # Dieselbe Berechtigung wie das Frontend: Der Connector ruft die API wie ein Browser im Namen

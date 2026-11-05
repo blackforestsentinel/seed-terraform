@@ -28,6 +28,8 @@ locals {
       "seed:module"      = "storage"
     },
     var.tags,
+    # Ohne owner kein Tag, der Storage Account bleibt dann unverändert.
+    var.owner == null ? {} : { owner = var.owner },
   )
 }
 

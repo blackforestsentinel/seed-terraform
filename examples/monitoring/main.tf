@@ -23,6 +23,8 @@ provider "azapi" {}
 
 locals {
   alert_emails = ["betrieb@example.org"]
+  # owner in project.yaml: Tag owner an allen Ressourcen und zusätzlicher Empfänger der Alarme.
+  owner = "team@example.org"
 }
 
 module "core" {
@@ -32,14 +34,16 @@ module "core" {
   environment        = "dev"
   static_web_app_sku = "None"
   log_daily_quota_gb = 0.5
+  owner              = local.owner
 }
 
 module "monitoring" {
   source = "../../monitoring"
-  count  = length(local.alert_emails) > 0 ? 1 : 0
+  count  = length(local.alert_emails) > 0 || local.owner != null ? 1 : 0
 
   name                       = "example"
   environment                = "dev"
+  owner                      = local.owner
   resource_group_name        = module.core.resource_group_name
   resource_group_id          = module.core.resource_group_id
   location                   = module.core.location

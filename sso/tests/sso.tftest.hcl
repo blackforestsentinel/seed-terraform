@@ -60,6 +60,11 @@ run "ohne_neue_einstellungen_wie_bisher" {
     condition     = [for r in azuread_application.spa[0].required_resource_access : r.resource_app_id] == ["33333333-3333-3333-3333-333333333333"] && output.directory_permissions == null
     error_message = "Ohne directory fordert die SPA nur die eigene API an, keine Graph-Berechtigungen."
   }
+
+  assert {
+    condition     = azuread_application.api[0].notes == null && azuread_service_principal.api[0].notes == null && azuread_application.spa[0].notes == null
+    error_message = "Ohne owner keine Notiz an den Registrierungen."
+  }
 }
 
 run "verzeichnis_an" {
@@ -713,4 +718,44 @@ run "zugelassene_clients_im_plan_bekannt" {
     condition     = output.app_settings.Auth__AllowedClientIds__3 == "aebc6443-996d-45c2-90f0-388ff96faa56"
     error_message = "Vorautorisierte Clients sind schon im Plan bekannt."
   }
+}
+
+run "owner_als_notiz" {
+  variables {
+    owner     = "team@example.org"
+    connector = true
+    mcp       = true
+  }
+
+  assert {
+    condition = alltrue([
+      for notes in concat(
+        azuread_application.api[*].notes, azuread_service_principal.api[*].notes,
+        azuread_application.spa[*].notes, azuread_service_principal.spa[*].notes,
+        azuread_application.connector[*].notes, azuread_service_principal.connector[*].notes,
+        azuread_application.mcp[*].notes, azuread_service_principal.mcp[*].notes,
+      ) : notes == "owner: team@example.org"
+    ])
+    error_message = "owner steht als Notiz an jeder Registrierung und jedem Service Principal, die das Modul anlegt."
+  }
+
+  assert {
+    condition     = length(azuread_application.connector) == 1 && length(azuread_application.mcp) == 1 && length(azuread_application.spa) == 1
+    error_message = "Der Lauf prüft API, SPA, Connector und MCP-Client."
+  }
+
+  assert {
+    condition     = azuread_application.api[0].owners == toset(["22222222-2222-2222-2222-222222222222"])
+    error_message = "Besitzerin im Sinne von Entra bleibt die ausführende Identität."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "team.example.org"
+  }
+
+  expect_failures = [var.owner]
 }

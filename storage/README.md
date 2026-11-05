@@ -35,6 +35,7 @@ Im Template übernimmt das `infra/storage.tf` aus dem Abschnitt `storage:` der `
 
 - Name `st<projekt><umgebung>data<kürzel>` (Projekt und Umgebung zusammen auf 12 Zeichen gekürzt), Kürzel stabil je Subscription, Projekt und Umgebung. `data` unterscheidet ihn im Portal vom Host-Storage.
 - Kein Shared Key (`shared_access_key_enabled = false`), Entra ID als Standard im Portal, TLS 1.2, nur HTTPS, kein öffentlicher Blob-Zugriff, keine Replikation in andere Tenants, keine lokalen Benutzer (SFTP).
+- Mit `owner` trägt er das Tag `owner` ([README des Repos](../README.md#besitzer-owner)), dazu Tags aus `tags`.
 - Öffentlicher Netzwerkzugang bleibt an: Flex Consumption ohne VNet erreicht den Account sonst nicht.
 - Tabellen, Queues und Container entstehen über die Azure-Ressourcenverwaltung (`storage_account_id`). Die Pipeline-Identität braucht dafür keine Datenrollen, `Contributor` genügt.
 

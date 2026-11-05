@@ -105,3 +105,86 @@ run "halbe_stunden_abgelehnt" {
 
   expect_failures = [var.health_check_interval_hours]
 }
+
+run "ohne_owner_wie_bisher" {
+  command = plan
+
+  assert {
+    condition     = [for r in azurerm_monitor_action_group.this.email_receiver : [r.name, r.email_address]] == [["mail-0", "betrieb@example.org"]]
+    error_message = "Ohne owner bleiben die Empfänger der Aktionsgruppe wie bisher."
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_monitor_action_group.this.tags), "owner")
+    error_message = "Ohne owner kein Tag owner."
+  }
+}
+
+run "owner_als_empfaenger_und_tag" {
+  command = plan
+
+  variables {
+    alert_emails = ["betrieb@example.org", "bereitschaft@example.org"]
+    owner        = "team@example.org"
+  }
+
+  assert {
+    condition = [for r in azurerm_monitor_action_group.this.email_receiver : [r.name, r.email_address]] == [
+      ["mail-0", "betrieb@example.org"],
+      ["mail-1", "bereitschaft@example.org"],
+      ["owner", "team@example.org"],
+    ]
+    error_message = "owner kommt als eigener Empfänger ans Ende; die bisherigen behalten ihre Namen."
+  }
+
+  assert {
+    condition = alltrue([
+      for tags in [
+        azurerm_monitor_action_group.this.tags,
+        azurerm_monitor_scheduled_query_rules_alert_v2.exceptions.tags,
+        azurerm_monitor_scheduled_query_rules_alert_v2.daily_cap.tags,
+        azurerm_logic_app_workflow.health[0].tags,
+        azurerm_monitor_metric_alert.health[0].tags,
+      ] : tags["owner"] == "team@example.org"
+    ])
+    error_message = "owner steht als Tag an jeder Ressource mit Tags."
+  }
+}
+
+run "owner_schon_unter_den_empfaengern" {
+  command = plan
+
+  variables {
+    alert_emails = ["Team@Example.org"]
+    owner        = "team@example.org"
+  }
+
+  assert {
+    condition     = [for r in azurerm_monitor_action_group.this.email_receiver : r.email_address] == ["Team@Example.org"]
+    error_message = "Steht owner schon unter alert_emails, auch anders geschrieben, kommt er nicht doppelt dazu."
+  }
+}
+
+run "nur_owner" {
+  command = plan
+
+  variables {
+    alert_emails = []
+    owner        = "team@example.org"
+  }
+
+  assert {
+    condition     = [for r in azurerm_monitor_action_group.this.email_receiver : [r.name, r.email_address]] == [["owner", "team@example.org"]]
+    error_message = "Ohne weitere Empfänger meldet die Aktionsgruppe an owner."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "Team Betrieb"
+  }
+
+  expect_failures = [var.owner]
+}

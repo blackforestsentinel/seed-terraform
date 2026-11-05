@@ -18,6 +18,17 @@ locals {
       "seed:module"      = "monitoring"
     },
     var.tags,
+    # Ohne owner kein Tag, bestehende Ressourcen bleiben dann unverändert.
+    var.owner == null ? {} : { owner = var.owner },
+  )
+
+  # Der Besitzer bekommt die Meldungen zusätzlich, außer er steht schon unter alert_emails;
+  # E-Mail-Adressen unterscheiden in der Praxis nicht nach Groß- und Kleinschreibung. Er kommt
+  # ans Ende, so behalten die bisherigen Empfänger ihre Namen mail-0, mail-1, …
+  owner_is_recipient = var.owner == null ? true : contains([for e in var.alert_emails : lower(e)], lower(var.owner))
+  email_receivers = concat(
+    [for i, e in var.alert_emails : { name = "mail-${i}", email = e }],
+    local.owner_is_recipient ? [] : [{ name = "owner", email = var.owner }],
   )
 }
 
@@ -30,11 +41,11 @@ resource "azurerm_monitor_action_group" "this" {
   tags       = local.tags
 
   dynamic "email_receiver" {
-    for_each = var.alert_emails
+    for_each = local.email_receivers
 
     content {
-      name          = "mail-${email_receiver.key}"
-      email_address = email_receiver.value
+      name          = email_receiver.value.name
+      email_address = email_receiver.value.email
       # Mit Resource Group und Ressource im Inhalt, daran erkennt man Projekt und Umgebung.
       use_common_alert_schema = true
     }

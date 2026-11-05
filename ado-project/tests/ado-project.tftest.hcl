@@ -211,3 +211,44 @@ run "vorhandenes_repo" {
     error_message = "Outputs aus dem vorhandenen Repo und dem Projekt."
   }
 }
+
+# Eigener State: Frühere Läufe haben project.yaml schon angelegt, und ignore_changes hielte den
+# alten Inhalt fest.
+run "project_yaml_ohne_owner" {
+  command   = plan
+  state_key = "project_yaml"
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "\n# owner: team@example.org\n") && !strcontains(azuredevops_git_repository_file.project_yaml.content, "\nowner:")
+    error_message = "Ohne owner steht in project.yaml nur ein auskommentiertes Beispiel."
+  }
+}
+
+run "project_yaml_mit_owner" {
+  command   = plan
+  state_key = "project_yaml"
+
+  variables {
+    owner = "team@example.org"
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "project: kundenportal\n# Besitzer") && strcontains(azuredevops_git_repository_file.project_yaml.content, "\nowner: team@example.org\n")
+    error_message = "owner steht auf oberster Ebene in project.yaml."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).owner == "team@example.org"
+    error_message = "project.yaml bleibt gültiges YAML, owner ist ein Schlüssel der obersten Ebene."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "kein Postfach"
+  }
+
+  expect_failures = [var.owner]
+}

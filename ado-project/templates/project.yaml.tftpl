@@ -1,5 +1,12 @@
 # Einzige Wahrheit über Projekt und Features. Terraform und Pipeline lesen diese Datei.
 project: ${name}
+# Besitzer und Ansprechpartner (E-Mail-Adresse oder Verteiler): Tag owner an allen Ressourcen und
+# Empfänger aller Alarme.
+%{ if owner != null ~}
+owner: ${owner}
+%{ else ~}
+# owner: team@example.org
+%{ endif ~}
 
 features:
   # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend

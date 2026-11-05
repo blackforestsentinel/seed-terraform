@@ -1,6 +1,6 @@
 # monitoring
 
-Alarme und Budget für ein Seed-Projekt, je Umgebung. Das Modul baut auf `core` auf und wird nur eingebunden, wenn es Empfänger gibt; ohne Empfänger gibt es keine Alarme und kein Budget.
+Alarme und Budget für ein Seed-Projekt, je Umgebung. Das Modul baut auf `core` auf und wird nur eingebunden, wenn es Empfänger gibt (`alert_emails` oder `owner`); ohne Empfänger gibt es keine Alarme und kein Budget.
 
 ```hcl
 module "monitoring" {
@@ -27,7 +27,7 @@ Im Template steuert der Abschnitt `monitoring:` in `project.yaml` die Eingaben.
 
 | Ressource | Inhalt |
 | --- | --- |
-| Aktionsgruppe `ag-<projekt>-<umgebung>` | Eine E-Mail je Empfänger im gemeinsamen Alarmschema. Alle Alarme und das Budget melden über diese Gruppe. Azure schickt jeder neuen Adresse einmal eine Mail, dass sie hinzugefügt wurde. |
+| Aktionsgruppe `ag-<projekt>-<umgebung>` | Eine E-Mail je Empfänger im gemeinsamen Alarmschema; mit `owner` auch an den Besitzer, außer er steht schon in `alert_emails`. Alle Alarme und das Budget melden über diese Gruppe. Azure schickt jeder neuen Adresse einmal eine Mail, dass sie hinzugefügt wurde. |
 | Alarm `alert-…-exceptions` | Abfrage auf Application Insights alle 15 Minuten über die letzte Stunde; meldet, sobald es `exception_threshold` (Default 5) Exceptions gab. Jede Exception zählt einmal, ob unbehandelt oder per `LogError` geloggt. Schweregrad 2. |
 | Logic App `logic-…-health` und Alarm `alert-…-health-check` | Die Logic App ruft `health_check_url` alle `health_check_interval_hours` Stunden (Default 4) ohne Token auf. Bei Zeitüberschreitung, 408, 429 und 5xx wiederholt sie den Aufruf viermal; antwortet der Endpunkt auch dann nicht mit 2xx, scheitert der Lauf. Der Alarm prüft alle 15 Minuten, ob ein Lauf gescheitert ist. Schweregrad 1. Entfällt mit `health_check_url = null`. |
 | Alarm `alert-…-daily-cap` | Meldet, wenn der Log Analytics Workspace sein Tageslimit (`core`: `log_daily_quota_gb`) erreicht hat. Bis 0 Uhr UTC kommt dann keine Telemetrie mehr an, und die übrigen Alarme bleiben still. Schweregrad 2. |
@@ -81,7 +81,8 @@ Budgets gibt es nur für Subscriptions mit Cost Management (Pay-as-you-go, EA, M
 | --- | --- | --- |
 | `name`, `environment` | wie bei `core` | |
 | `resource_group_name`, `resource_group_id`, `location`, `application_insights_id`, `log_analytics_workspace_id` | Outputs von `core` | |
-| `alert_emails` | Empfänger, mindestens einer | |
+| `alert_emails` | Empfänger; ohne sie und ohne `owner` das Modul weglassen | `[]` |
+| `owner` | Besitzer: zusätzlicher Empfänger `owner` und Tag `owner` an allen Ressourcen ([README des Repos](../README.md#besitzer-owner)); `null` ohne | `null` |
 | `exception_threshold` | Exceptions je Stunde, ab denen der Alarm kommt | `5` |
 | `health_check_url` | URL für den Health-Check; `null` ohne Health-Check | `null` |
 | `health_check_interval_hours` | Stunden zwischen den Läufen, 1 bis 12 | `4` |

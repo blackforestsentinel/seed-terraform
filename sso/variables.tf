@@ -73,3 +73,14 @@ variable "additional_allowed_client_ids" {
     error_message = "additional_allowed_client_ids: jeweils eine Client-ID (GUID)."
   }
 }
+
+variable "owner" {
+  description = "Besitzer und Ansprechpartner des Projekts als E-Mail-Adresse, z. B. team@example.org (im Template owner in project.yaml). App-Registrierungen kennen keine Azure-Tags; das Modul schreibt ihn als Notiz „owner: <adresse>“ (notes) an jede Registrierung und jeden Service Principal, den es anlegt. null: keine Notiz."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.owner == null || can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", var.owner))
+    error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org."
+  }
+}

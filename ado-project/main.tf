@@ -97,7 +97,7 @@ resource "azuredevops_git_repository_file" "project_yaml" {
   repository_id       = local.repository_id
   branch              = local.branch
   file                = "project.yaml"
-  content             = templatefile("${path.module}/templates/project.yaml.tftpl", { name = var.name, features = var.features, frontend = var.frontend })
+  content             = templatefile("${path.module}/templates/project.yaml.tftpl", { name = var.name, owner = var.owner, features = var.features, frontend = var.frontend })
   commit_message      = "seed-scaffold: project.yaml für ${var.name}"
   overwrite_on_create = true
 

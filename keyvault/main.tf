@@ -34,6 +34,8 @@ locals {
       "seed:module"      = "keyvault"
     },
     var.tags,
+    # Ohne owner kein Tag, der Vault bleibt dann unverändert.
+    var.owner == null ? {} : { owner = var.owner },
   )
 }
 

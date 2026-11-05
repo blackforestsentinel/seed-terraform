@@ -24,6 +24,28 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
+### Besitzer (`owner`)
+
+Jedes Projekt hat eine Ansprechperson oder ein Team, im Template `owner` in `project.yaml`. Die Module `core`, `keyvault`, `storage`, `monitoring` und `sso` nehmen sie als Variable `owner` an, eine E-Mail-Adresse oder einen Verteiler:
+
+```hcl
+module "core" {
+  # ...
+  owner = local.cfg.owner # z. B. team@example.org
+}
+```
+
+| Modul | Wirkung |
+| --- | --- |
+| `core`, `keyvault`, `storage`, `monitoring` | Tag `owner` an jeder Ressource, die Tags kennt. Er geht einem Tag `owner` aus `tags` vor. |
+| `monitoring` | Zusätzlicher Empfänger `owner` in der Aktionsgruppe, also für alle Alarme und Budget-Warnungen. Steht die Adresse schon in `alert_emails`, auch anders geschrieben, kommt keine zweite Mail. |
+| `sso` | App-Registrierungen kennen keine Azure-Tags. Das Modul schreibt `owner: <adresse>` als Notiz (`notes`) an jede Registrierung und jeden Service Principal, den es anlegt. Besitzerin im Sinne von Entra bleibt die Pipeline-Identität. |
+| `ado-project` | `owner` in der erzeugten `project.yaml`, sonst ein auskommentiertes Beispiel. |
+
+Die Module prüfen das Format einer E-Mail-Adresse. Ohne `owner` (Default `null`) ändert sich nichts.
+
+Umstieg: Kommt `owner` dazu, ändert der nächste Apply die Tags an Ort und Stelle; nichts wird ersetzt. Die Pipeline verlangt dafür einmal die Infrastruktur-Freigabe. Die Function App schreibt Terraform dabei mit ihrer ganzen Konfiguration neu (`azapi`), wie bei jeder Änderung der App-Settings; sie kann dabei neu starten. Azure schickt der Adresse einmal eine Mail, dass sie der Aktionsgruppe hinzugefügt wurde.
+
 ### core
 
 Das Modul legt keine Schlüssel an: Die Function greift per User-Assigned Managed Identity auf ihren Host-Storage zu, Shared-Key-Zugriff ist abgeschaltet. Basic Auth für Deployments (SCM, FTP) ist aus, Deployments laufen über Entra ID. Die Function App entsteht per `azapi`, weil die azurerm-Ressource für Flex Consumption dabei fehlerhafte App-Settings setzt ([#29149](https://github.com/hashicorp/terraform-provider-azurerm/issues/29149), [#33211](https://github.com/hashicorp/terraform-provider-azurerm/issues/33211)).
@@ -41,7 +63,7 @@ provider "azurerm" {
 provider "azapi" {}
 ```
 
-Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default).
+Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default), `owner` (Tag `owner`, siehe [Besitzer](#besitzer-owner)), `tags`.
 
 Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`; für das Modul monitoring `resource_group_id`, `application_insights_id` und `log_analytics_workspace_id`.
 
@@ -396,6 +418,10 @@ terraform -chdir=examples/ado-project validate
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
 
 ```bash
+terraform -chdir=core init -backend=false
+terraform -chdir=core test
+terraform -chdir=keyvault init -backend=false
+terraform -chdir=keyvault test
 terraform -chdir=sso init -backend=false
 terraform -chdir=sso test
 terraform -chdir=monitoring init -backend=false

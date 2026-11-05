@@ -182,3 +182,14 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "owner" {
+  description = "Besitzer und Ansprechpartner des Projekts als E-Mail-Adresse, z. B. team@example.org. Steht als Tag owner am Storage Account und geht einem Tag owner aus tags vor. null: kein Tag."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.owner == null || can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", var.owner))
+    error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org."
+  }
+}

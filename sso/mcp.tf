@@ -93,6 +93,7 @@ resource "azuread_application" "mcp" {
   display_name     = "${local.base}-mcp"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
+  notes            = local.notes
 
   # Nur Authorization Code mit PKCE über die Redirect-URIs; true öffnete zusätzlich Device Code
   # und Passwort-Anmeldung (ROPC), die kein MCP-Client braucht.
@@ -132,6 +133,7 @@ resource "azuread_service_principal" "mcp" {
 
   client_id = azuread_application.mcp[0].client_id
   owners    = local.owners
+  notes     = local.notes
 }
 
 # Nur mcp_access, nie access_as_user: Ein Token, das ein MCP-Client bekommt, erreicht den

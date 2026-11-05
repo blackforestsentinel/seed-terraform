@@ -21,6 +21,8 @@ locals {
       "seed:module"      = "core"
     },
     var.tags,
+    # Ohne owner kein Tag, bestehende Ressourcen bleiben dann unverändert.
+    var.owner == null ? {} : { owner = var.owner },
   )
 }
 

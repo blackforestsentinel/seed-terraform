@@ -7,6 +7,11 @@ locals {
   # deren Besitzerin sie ist; deshalb steht sie immer in owners.
   owners = distinct(concat([data.azuread_client_config.current.object_id], var.additional_owners))
 
+  # Ansprechpartner für Admins in Entra, die eine Registrierung keinem Projekt zuordnen können.
+  # Besitzer im Sinne von Entra (owners) bleibt die Pipeline: Eine E-Mail-Adresse ließe sich nur mit
+  # Leserechten auf Benutzer in eine Object-ID auflösen. null lässt die Notiz unverändert leer.
+  notes = var.owner == null ? null : "owner: ${var.owner}"
+
   # Entra ID verlangt bei URIs ohne Pfad einen abschließenden Schrägstrich
   # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.
   spa_redirect_uris       = [for uri in var.spa_redirect_uris : can(regex("^https?://[^/]+$", uri)) ? "${uri}/" : uri]
@@ -37,6 +42,7 @@ resource "azuread_application" "api" {
   display_name     = "${local.base}-api"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
+  notes            = local.notes
 
   api {
     requested_access_token_version = 2
@@ -93,6 +99,7 @@ resource "azuread_service_principal" "api" {
 
   client_id = azuread_application.api[0].client_id
   owners    = local.owners
+  notes     = local.notes
 
   # Mit true bekommen nur Personen, Gruppen und Anwendungen mit einer App-Rolle ein Token.
   app_role_assignment_required = var.assignment_required
@@ -106,6 +113,7 @@ resource "azuread_application" "spa" {
   display_name     = "${local.base}-web"
   sign_in_audience = "AzureADMyOrg"
   owners           = local.owners
+  notes            = local.notes
 
   single_page_application {
     redirect_uris = local.spa_all_redirect_uris
@@ -145,6 +153,7 @@ resource "azuread_service_principal" "spa" {
 
   client_id = azuread_application.spa[0].client_id
   owners    = local.owners
+  notes     = local.notes
 }
 
 # Das Frontend darf die API ohne Einwilligungsdialog aufrufen.
