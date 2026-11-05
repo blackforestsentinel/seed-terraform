@@ -48,6 +48,9 @@ locals {
   pr_runs_supported = local.pipelines_number == null ? true : local.pipelines_number >= 5000
   # Den Parameter pool kennt web-app.yml erst ab v0.13.0; ältere Versionen lehnen ihn ab.
   pool_supported = local.pipelines_number == null ? true : local.pipelines_number >= 13000
+  # allowBreakingConnectorChanges und checkConnectorConnections kennt web-app.yml erst ab v0.17.0;
+  # ältere Versionen lehnen unbekannte Parameter ab, die Pipeline startete dann gar nicht.
+  connector_checks_supported = local.pipelines_number == null ? true : local.pipelines_number >= 17000
 }
 
 # --- Repo aus dem Template ------------------------------------------------------
@@ -119,6 +122,7 @@ resource "azuredevops_git_repository_file" "pipeline" {
     pipelines_version  = var.pipelines_version
     terraform_state    = var.terraform_state
     pool               = var.pool
+    connector_checks   = local.connector_checks_supported
   })
   commit_message      = "seed-scaffold: azure-pipelines.yml für ${var.name}"
   overwrite_on_create = true

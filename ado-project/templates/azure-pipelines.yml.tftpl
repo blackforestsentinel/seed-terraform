@@ -8,13 +8,23 @@ trigger:
 # PR-Läufe startet in Azure Repos die Branch-Policy auf main, nicht dieser Trigger.
 pr: none
 
-# Nur von Hand ankreuzen: erlaubt einem Lauf, Daten zu löschen (Storage, Key Vault, Logs).
-# Ohne Bestätigung endet ein Plan, der solche Ressourcen löscht oder ersetzt, vor der Freigabe.
+# Nur von Hand ankreuzen, jeweils für einen bewusst gestarteten Lauf:
 parameters:
+  # Erlaubt einem Lauf, Daten zu löschen (Storage, Key Vault, Logs). Ohne Bestätigung endet ein
+  # Plan, der solche Ressourcen löscht oder ersetzt, vor der Freigabe.
   - name: confirmDataDeletion
     displayName: Datenlöschung bestätigen (Storage, Key Vault, Logs)
     type: boolean
     default: false
+%{ if connector_checks ~}
+  # Nur mit features.customConnector: Entfernt der Lauf eine Operation des Custom Connectors oder
+  # ändert sie so, dass Flows brechen, die sie nutzen, endet er sonst vor dem Deploy. Angekreuzt
+  # werden die Fehler zu Warnungen, etwa wenn der betroffene Flow ohnehin abgeschaltet wird.
+  - name: allowBreakingConnectorChanges
+    displayName: Breaking Changes am Custom Connector zulassen
+    type: boolean
+    default: false
+%{ endif ~}
 
 resources:
   repositories:
@@ -22,6 +32,7 @@ resources:
       type: github
       name: blackforestsentinel/seed-pipelines
       ref: refs/tags/${pipelines_version}
+      # GitHub-Service-Connection der Azure-DevOps-Organisation (nur Lesezugriff nötig)
       endpoint: ${github_connection}
 
 extends:
@@ -37,11 +48,19 @@ extends:
     # Eigener Agent-Pool statt Microsoft-gehosteter Agents
     pool: ${pool}
 %{ endif ~}
+    # Ablage des Terraform-States im Tenant, angelegt beim Tenant-Onboarding
     terraformState:
       resourceGroup: ${terraform_state.resource_group}
       storageAccount: ${terraform_state.storage_account}
       container: ${terraform_state.container}
     confirmDataDeletion: $${{ parameters.confirmDataDeletion }}
+%{ if connector_checks ~}
+    allowBreakingConnectorChanges: $${{ parameters.allowBreakingConnectorChanges }}
+    # Nur mit features.customConnector, Opt-in: prüft, ob die Konten der Verbindungen zum Connector
+    # eine Rolle aus auth.roles haben, und warnt sonst. Die Pipeline-Identität braucht dafür
+    # zusätzliche Rechte (README von seed-pipelines).
+    # checkConnectorConnections: true
+%{ endif ~}
     # Mit sso muss GET /api/me ohne Token mit 401 antworten.
     smokeTest:
       protectedPath: api/me

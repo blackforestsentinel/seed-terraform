@@ -276,7 +276,7 @@ Ausgabe `directory_permissions`: `tenant_id`, `spa_client_id`, `permissions` (je
 
 ### ado-project
 
-Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines). Die erzeugte `project.yaml` setzt ab v0.17.0 `auth.assignmentRequired: true` und mit `owner` den Besitzer.
+Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines). Die erzeugten Dateien `project.yaml` und `azure-pipelines.yml` entsprechen denen aus seed-template, mit Name, Features, Frontend, Umgebungen und Verbindungen des Projekts. Ab v0.17.0 setzt `project.yaml` `auth.assignmentRequired: true` und mit `owner` den Besitzer, sonst `owner: ""` mit `TODO(onboarding)`. `azure-pipelines.yml` bekommt den Laufzeitparameter `allowBreakingConnectorChanges` und den auskommentierten Schalter `checkConnectorConnections` erst mit `pipelines_version` ab v0.17.0; ältere Versionen von `web-app.yml` lehnen unbekannte Parameter ab.
 
 PR-Validierung (`pr_validation`, Standard `true`): eine Branch-Policy auf `main`, nach der Pull Requests einen erfolgreichen Lauf der Projekt-Pipeline brauchen. Die Pipeline erkennt PR-Läufe selbst und baut, testet und sucht dann nur nach Secrets, ohne Deploy und ohne Service Connection; eine zweite Pipeline-Definition ist nicht nötig. Ein Ergebnis gilt 12 Stunden, auch wenn sich `main` ändert. Die Policy ist Pflicht und sperrt damit direkte Pushes auf `main`; sie entsteht deshalb erst nach den Dateien, die das Modul direkt auf `main` schreibt.
 
