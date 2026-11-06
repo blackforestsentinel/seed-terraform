@@ -11,13 +11,29 @@ locals {
     var.health_check_interval_hours < 12 ? "PT12H" : "P1D"
   )
 
+  # Leerer Text gilt wie null: Das Template liefert owner: "" aus, bis jemand eine Adresse einträgt.
+  owner = var.owner == "" ? null : var.owner
+
   tags = merge(
     {
       "seed:project"     = var.name
       "seed:environment" = var.environment
       "seed:module"      = "monitoring"
     },
-    var.tags,
+    # Mit owner fällt ein Tag owner aus tags weg, gleich wie geschrieben: merge() unterscheidet
+    # Owner und owner, Azure nicht.
+    { for k, v in var.tags : k => v if local.owner == null || lower(k) != "owner" },
+    # Ohne owner kein Tag, bestehende Ressourcen bleiben dann unverändert.
+    local.owner == null ? {} : { owner = local.owner },
+  )
+
+  # Der Besitzer bekommt die Meldungen zusätzlich, außer er steht schon unter alert_emails;
+  # E-Mail-Adressen unterscheiden in der Praxis nicht nach Groß- und Kleinschreibung. Er kommt
+  # ans Ende, so behalten die bisherigen Empfänger ihre Namen mail-0, mail-1, …
+  owner_is_recipient = local.owner == null ? true : contains([for e in var.alert_emails : lower(e)], lower(local.owner))
+  email_receivers = concat(
+    [for i, e in var.alert_emails : { name = "mail-${i}", email = e }],
+    local.owner_is_recipient ? [] : [{ name = "owner", email = local.owner }],
   )
 }
 
@@ -30,11 +46,11 @@ resource "azurerm_monitor_action_group" "this" {
   tags       = local.tags
 
   dynamic "email_receiver" {
-    for_each = var.alert_emails
+    for_each = local.email_receivers
 
     content {
-      name          = "mail-${email_receiver.key}"
-      email_address = email_receiver.value
+      name          = email_receiver.value.name
+      email_address = email_receiver.value.email
       # Mit Resource Group und Ressource im Inhalt, daran erkennt man Projekt und Umgebung.
       use_common_alert_schema = true
     }
@@ -183,6 +199,81 @@ resource "azurerm_monitor_scheduled_query_rules_alert_v2" "daily_cap" {
   action {
     action_groups = [azurerm_monitor_action_group.this.id]
   }
+}
+
+# --- Ablauf von Secrets ---------------------------------------------------------
+
+# Key Vault meldet über Event Grid, wenn die aktuelle Version eines Secrets in 30 Tagen abläuft
+# (fest, nicht einstellbar) und wenn sie abgelaufen ist. Event Grid macht daraus direkt einen Alarm
+# in Azure Monitor an die Aktionsgruppe, ohne Logic App oder eigenen Code dazwischen. Ein Secret
+# ohne Ablaufdatum löst nichts aus; Seed erzwingt keines.
+locals {
+  secret_expiry_events = {
+    secret-near-expiry = {
+      event_type  = "Microsoft.KeyVault.SecretNearExpiry"
+      severity    = "Sev2"
+      description = "${local.base}: Ein Secret im Key Vault läuft in 30 Tagen ab. Welches, steht in den Details des Alarms (ObjectName, EXP). Neuen Wert beschaffen und mit neuem Ablaufdatum setzen: az keyvault secret set --expires."
+    }
+    secret-expired = {
+      event_type  = "Microsoft.KeyVault.SecretExpired"
+      severity    = "Sev1"
+      description = "${local.base}: Ein Secret im Key Vault ist abgelaufen. Key Vault liefert es weiter aus, beim Anbieter gilt es aber meist nicht mehr. Welches, steht in den Details des Alarms (ObjectName). Neuen Wert setzen: az keyvault secret set --expires."
+    }
+  }
+
+  # Je Vault und Ereignis ein Abonnement, z. B. keyvault/secret-near-expiry.
+  secret_expiry_subscriptions = {
+    for pair in setproduct(keys(var.key_vault_ids), keys(local.secret_expiry_events)) :
+    "${pair[0]}/${pair[1]}" => { vault = pair[0], event = pair[1] }
+  }
+}
+
+# Azure erlaubt je Vault höchstens ein System-Topic, und es muss in der Region des Vaults liegen;
+# location ist hier dieselbe wie im Modul keyvault.
+resource "azurerm_eventgrid_system_topic" "key_vault" {
+  for_each = var.key_vault_ids
+
+  name                = "egst-${local.base}-${each.key}"
+  resource_group_name = var.resource_group_name
+  location            = var.location
+  source_resource_id  = each.value
+  topic_type          = "Microsoft.KeyVault.vaults"
+  tags                = local.tags
+}
+
+# azapi, weil azurerm (bis 5.x) das Ziel „Azure Monitor alert“ nicht kennt. Dieses Ziel nimmt nur
+# Ereignisse im CloudEvents-Schema an.
+resource "azapi_resource" "secret_expiry" {
+  for_each = local.secret_expiry_subscriptions
+
+  type      = "Microsoft.EventGrid/systemTopics/eventSubscriptions@2025-02-15"
+  name      = each.value.event
+  parent_id = azurerm_eventgrid_system_topic.key_vault[each.value.vault].id
+
+  body = {
+    properties = {
+      eventDeliverySchema = "CloudEventSchemaV1_0"
+      filter = {
+        includedEventTypes = [local.secret_expiry_events[each.value.event].event_type]
+      }
+      destination = {
+        endpointType = "MonitorAlert"
+        properties = {
+          severity     = local.secret_expiry_events[each.value.event].severity
+          description  = local.secret_expiry_events[each.value.event].description
+          actionGroups = [azurerm_monitor_action_group.this.id]
+        }
+      }
+    }
+  }
+
+  # Azure kann die ID der Aktionsgruppe in anderer Schreibweise zurückgeben; ohne das zeigte jeder
+  # Plan eine Änderung, und die Pipeline verlangte jedes Mal eine Freigabe.
+  ignore_casing = true
+
+  # Die Abonnements eines Topics nacheinander: Event Grid antwortet auf gleichzeitige Änderungen
+  # am selben Topic gelegentlich mit 409 Conflict.
+  locks = [azurerm_eventgrid_system_topic.key_vault[each.value.vault].id]
 }
 
 # --- Budget ---------------------------------------------------------------------

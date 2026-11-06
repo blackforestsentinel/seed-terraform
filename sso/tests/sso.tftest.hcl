@@ -23,7 +23,7 @@ variables {
   spa_redirect_uris = ["https://app.example.org", "http://localhost:5173"]
 }
 
-run "ohne_neue_einstellungen_wie_bisher" {
+run "standard_ohne_optionen" {
   # Im Mock haben alle Registrierungen dieselbe Client-ID; Auth__AllowedClientIds__0 ist die der SPA.
   assert {
     condition = output.app_settings == {
@@ -52,13 +52,18 @@ run "ohne_neue_einstellungen_wie_bisher" {
   }
 
   assert {
-    condition     = length(azuread_application_app_role.api) == 0 && azuread_service_principal.api[0].app_role_assignment_required == false
-    error_message = "Ohne app_roles keine Rollen und keine Zuweisungspflicht."
+    condition     = length(azuread_application_app_role.api) == 0 && azuread_service_principal.api[0].app_role_assignment_required == true
+    error_message = "Ohne app_roles keine Rollen; die Zuweisungspflicht ist ab v0.17.0 Standard."
   }
 
   assert {
     condition     = [for r in azuread_application.spa[0].required_resource_access : r.resource_app_id] == ["33333333-3333-3333-3333-333333333333"] && output.directory_permissions == null
     error_message = "Ohne directory fordert die SPA nur die eigene API an, keine Graph-Berechtigungen."
+  }
+
+  assert {
+    condition     = azuread_application.api[0].notes == null && azuread_service_principal.api[0].notes == null && azuread_application.spa[0].notes == null
+    error_message = "Ohne owner keine Notiz an den Registrierungen."
   }
 }
 
@@ -521,7 +526,7 @@ run "connector_an" {
   }
 
   assert {
-    condition = output.app_settings == merge(run.ohne_neue_einstellungen_wie_bisher.app_settings, {
+    condition = output.app_settings == merge(run.standard_ohne_optionen.app_settings, {
       Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
     })
     error_message = "connector ergänzt die App-Settings nur um seine Client-ID als zugelassenen Client, nach der SPA."
@@ -682,7 +687,7 @@ run "zugelassene_clients_reihenfolge" {
   assert {
     condition = (
       { for k, v in output.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") } ==
-      { for k, v in run.ohne_neue_einstellungen_wie_bisher.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") }
+      { for k, v in run.standard_ohne_optionen.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") }
     )
     error_message = "Die übrigen App-Settings bleiben mit connector und mcp ohne eigene Domain unverändert."
   }
@@ -712,5 +717,84 @@ run "zugelassene_clients_im_plan_bekannt" {
   assert {
     condition     = output.app_settings.Auth__AllowedClientIds__3 == "aebc6443-996d-45c2-90f0-388ff96faa56"
     error_message = "Vorautorisierte Clients sind schon im Plan bekannt."
+  }
+}
+
+run "owner_als_notiz" {
+  variables {
+    owner     = "team@example.org"
+    connector = true
+    mcp       = true
+  }
+
+  assert {
+    condition = alltrue([
+      for notes in concat(
+        azuread_application.api[*].notes, azuread_service_principal.api[*].notes,
+        azuread_application.spa[*].notes, azuread_service_principal.spa[*].notes,
+        azuread_application.connector[*].notes, azuread_service_principal.connector[*].notes,
+        azuread_application.mcp[*].notes, azuread_service_principal.mcp[*].notes,
+      ) : notes == "owner: team@example.org"
+    ])
+    error_message = "owner steht als Notiz an jeder Registrierung und jedem Service Principal, die das Modul anlegt."
+  }
+
+  assert {
+    condition     = length(azuread_application.connector) == 1 && length(azuread_application.mcp) == 1 && length(azuread_application.spa) == 1
+    error_message = "Der Lauf prüft API, SPA, Connector und MCP-Client."
+  }
+
+  assert {
+    condition     = azuread_application.api[0].owners == toset(["22222222-2222-2222-2222-222222222222"])
+    error_message = "Besitzerin im Sinne von Entra bleibt die ausführende Identität."
+  }
+}
+
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = azuread_application.api[0].notes == null && azuread_service_principal.api[0].notes == null
+    error_message = "Ein leerer owner wirkt wie null: keine Notiz."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "team.example.org"
+  }
+
+  expect_failures = [var.owner]
+}
+
+run "zuweisung_ausdruecklich_aus" {
+  command = plan
+
+  variables {
+    assignment_required = false
+  }
+
+  assert {
+    condition     = azuread_service_principal.api[0].app_role_assignment_required == false
+    error_message = "assignment_required = false schaltet die Zuweisungspflicht ab."
+  }
+}
+
+run "zuweisung_null_bleibt_an" {
+  command = plan
+
+  variables {
+    assignment_required = null
+  }
+
+  assert {
+    condition     = azuread_service_principal.api[0].app_role_assignment_required == true
+    error_message = "null gilt als Default true, nicht als false."
   }
 }

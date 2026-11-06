@@ -78,4 +78,16 @@ variable "tags" {
   description = "Zusätzliche Tags für den Vault."
   type        = map(string)
   default     = {}
+  nullable    = false
+}
+
+variable "owner" {
+  description = "Besitzer und Ansprechpartner des Projekts als E-Mail-Adresse, z. B. team@example.org. Steht als Tag owner am Vault und ersetzt einen Tag owner aus tags, gleich wie geschrieben (etwa Owner). null oder leer: kein Tag."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.owner == null || var.owner == "" || can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", var.owner))
+    error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org, oder leer."
+  }
 }

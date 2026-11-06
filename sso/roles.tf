@@ -25,10 +25,14 @@ variable "app_roles" {
   }
 }
 
+# Default true: Ein Konto ohne Rolle bekommt gar kein Token für die API. Mit false meldet sich
+# jedes Konto des Tenants an und bekommt nur keine Capabilities; jede Function ohne
+# [RequireCapability] stünde ihm offen. nullable = false, damit null nicht still zu false wird.
 variable "assignment_required" {
-  description = "Zuweisung erforderlich: Tokens für die API bekommen nur Personen, Gruppen und Anwendungen mit einer App-Rolle. Default false, dann kann sich jedes Konto des Tenants anmelden."
+  description = "Zuweisung erforderlich: Tokens für die API bekommen nur Personen, Gruppen und Anwendungen mit einer App-Rolle (ohne App-Rollen: mit der Standardrolle). Default true; bis v0.16.0 false. false: Jedes Konto des Tenants kann sich anmelden."
   type        = bool
-  default     = false
+  default     = true
+  nullable    = false
 }
 
 locals {

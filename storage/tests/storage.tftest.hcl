@@ -122,3 +122,54 @@ run "publisher_keine_object_id" {
 
   expect_failures = [var.extension_publisher_principal_id]
 }
+
+run "owner_als_tag" {
+  command = plan
+
+  variables {
+    owner = "team@example.org"
+    tags  = { Owner = "alt@example.org" }
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_storage_account.this.tags), "Owner")
+    error_message = "owner ersetzt einen Tag Owner aus tags, gleich wie geschrieben."
+  }
+
+  assert {
+    condition     = azurerm_storage_account.this.tags["owner"] == "team@example.org" && azurerm_storage_account.this.tags["seed:module"] == "storage"
+    error_message = "owner steht als Tag am Storage Account und geht einem Tag owner aus tags vor."
+  }
+}
+
+run "ohne_owner_kein_tag" {
+  command = plan
+
+  assert {
+    condition     = !contains(keys(azurerm_storage_account.this.tags), "owner")
+    error_message = "Ohne owner kein Tag owner."
+  }
+}
+
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_storage_account.this.tags), "owner")
+    error_message = "Ein leerer owner wirkt wie null: kein Tag."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "team"
+  }
+
+  expect_failures = [var.owner]
+}

@@ -19,10 +19,32 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | --- | --- | --- |
 | `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights und Log Analytics (Tageslimit) ohne lokale Authentifizierung, Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, Liste der zugelassenen Clients für `Bfs.Seed.Auth`, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
-| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
-| [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
+| `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs, Ablauf von Secrets im Key Vault) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
+| [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, URI des Vaults als `Seed__KeyVaultUri`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
 | `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
+
+### Besitzer (`owner`)
+
+Jedes Projekt hat eine Ansprechperson oder ein Team, im Template `owner` in `project.yaml`. Die Module `core`, `keyvault`, `storage`, `monitoring` und `sso` nehmen sie als Variable `owner` an, eine E-Mail-Adresse oder einen Verteiler:
+
+```hcl
+module "core" {
+  # ...
+  owner = try(local.cfg.owner, null) # z. B. team@example.org; "" wie null
+}
+```
+
+| Modul | Wirkung |
+| --- | --- |
+| `core`, `keyvault`, `storage`, `monitoring` | Tag `owner` an jeder Ressource, die Tags kennt. Er ersetzt einen Tag `owner` aus `tags`, gleich wie geschrieben (`Owner`, `OWNER`): Azure unterscheidet bei Tag-Namen keine Groß- und Kleinschreibung. |
+| `monitoring` | Zusätzlicher Empfänger `owner` in der Aktionsgruppe, also für alle Alarme und Budget-Warnungen. Steht die Adresse schon in `alert_emails`, auch anders geschrieben, kommt keine zweite Mail. |
+| `sso` | App-Registrierungen kennen keine Azure-Tags. Das Modul schreibt `owner: <adresse>` als Notiz (`notes`) an jede Registrierung und jeden Service Principal, den es anlegt. Besitzerin im Sinne von Entra bleibt die Pipeline-Identität. |
+| `ado-project` | `owner` in der erzeugten `project.yaml`; ohne Angabe `owner: ""` mit `TODO(onboarding)`, wie im Template. |
+
+Die Module prüfen das Format einer E-Mail-Adresse. Leerer Text gilt wie `null`: Das Template liefert `owner: ""` aus, bis jemand eine Adresse einträgt, und kann den Wert unverändert übergeben. Fehlt der Schlüssel ganz, fängt das der Aufrufer ab, etwa mit `try(local.cfg.owner, null)`. Ohne `owner` (Default `null`) oder mit leerem Text ändert sich nichts.
+
+Umstieg: Kommt `owner` dazu, ändert der nächste Apply die Tags an Ort und Stelle; nichts wird ersetzt. Die Pipeline verlangt dafür einmal die Infrastruktur-Freigabe. Die Function App schreibt Terraform dabei mit ihrer ganzen Konfiguration neu (`azapi`), wie bei jeder Änderung der App-Settings; sie kann dabei neu starten. Azure schickt der Adresse einmal eine Mail, dass sie der Aktionsgruppe hinzugefügt wurde.
 
 ### core
 
@@ -41,7 +63,7 @@ provider "azurerm" {
 provider "azapi" {}
 ```
 
-Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default).
+Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default), `owner` (Tag `owner`, siehe [Besitzer](#besitzer-owner)), `tags`.
 
 Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`; für das Modul monitoring `resource_group_id`, `application_insights_id` und `log_analytics_workspace_id`.
 
@@ -49,7 +71,7 @@ Konvention: Das Modul setzt die App-Settings `Seed__Project` und `Seed__Environm
 
 Key-Vault-Referenzen (`@Microsoft.KeyVault(...)`) in `app_settings` löst die Plattform mit der UAMI der Function auf (`keyVaultReferenceIdentity`); die Leserechte vergibt das Modul [`keyvault`](keyvault/README.md). Ab dieser Version zeigt der erste Plan nach dem Update dafür einmal eine Änderung an der Function App.
 
-CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu.
+CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu, ohne Credentials. Ab v0.17.0 lehnt das Modul ein `*` in `cors_allowed_origins` ab, auch als Platzhalter wie `https://*.example.org`: Jede Website, bzw. jede Subdomain, dürfte die API sonst aus dem Browser aufrufen und die Antworten lesen. Ebenso den Origin `null`, den Browser für Sandbox-iframes, `data:`- und `file:`-Seiten senden und den damit jede Website erzeugen kann. Origins einzeln angeben. Das Template lässt schon bisher nur einzelne Origins zu.
 
 #### Telemetrie ohne Schlüssel
 
@@ -155,7 +177,9 @@ module "sso" {
 
 Personen und Gruppen weist ein Admin in Entra zu (Enterprise App `<projekt>-<umgebung>-api`, „Benutzer und Gruppen“). Die Pipeline kann das nicht: Zuweisungen über Graph verlangen `AppRoleAssignment.ReadWrite.All`, `Application.ReadWrite.OwnedBy` reicht dafür nicht. Gruppen werden nicht verschachtelt aufgelöst; zugewiesen wird die Gruppe, in der die Personen direkt Mitglied sind.
 
-`assignment_required = true` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Default ist `false`, dann kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities.
+`assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Ohne `app_roles` weist der Admin der Standardrolle („Standardzugriff“) zu. Mit `false` kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities; eine Function ohne `[RequireCapability]` stünde ihm offen.
+
+Default ist ab v0.17.0 `true` (bis v0.16.0 `false`); `null` gilt als Default. Umstieg: Wer das Modul ohne `assignment_required` einbindet, sieht im nächsten Plan eine Änderung am Service Principal der API an Ort und Stelle. Danach bekommt nur noch ein Token, wer eine Rolle hat; vor dem Update also Personen und Gruppen in Entra zuweisen oder `assignment_required = false` setzen. Das Template übergibt den Wert aus `auth.assignmentRequired` in `project.yaml` ausdrücklich, mit `false` als Rückfallwert: Projekte, deren `project.yaml` den Schlüssel nicht hat, behalten `false`, und neue Projekte haben `assignmentRequired: true` ausdrücklich in `project.yaml`. Für bestehende Template-Projekte ändert sich durch den neuen Default also nichts.
 
 #### Bridge-Seite für die stille Anmeldung
 
@@ -197,7 +221,7 @@ Was der Admin im anderen Tenant einrichtet:
 2. **API-Registrierung** mit Application ID URI (`audience`) und einer delegierten Berechtigung (`api_scope`).
 3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
 4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
-5. **Zuweisungen** von Personen und Gruppen zu den Rollen, bei Bedarf „Zuweisung erforderlich“ an der Enterprise App der API.
+5. **Zuweisungen** von Personen und Gruppen zu den Rollen und „Zuweisung erforderlich“ an der Enterprise App der API. Das Modul setzt es bei eigenen Registrierungen als Standard; eine vorhandene erreicht es nicht.
 6. **Mit `directory`:** die Graph-Berechtigungen an der SPA-Registrierung und die Zustimmung, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
 
 #### Personen und Profilbilder (Microsoft Graph)
@@ -252,7 +276,7 @@ Ausgabe `directory_permissions`: `tenant_id`, `spa_client_id`, `permissions` (je
 
 ### ado-project
 
-Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines).
+Legt für die Pipeline `seed-scaffold` ein Seed-Projekt in Azure DevOps an; Ablauf und Parameter beschreibt [seed-pipelines](https://github.com/blackforestsentinel/seed-pipelines). Die erzeugten Dateien `project.yaml` und `azure-pipelines.yml` entsprechen denen aus seed-template, mit Name, Features, Frontend, Umgebungen und Verbindungen des Projekts. Ab v0.17.0 setzt `project.yaml` `auth.assignmentRequired: true` und mit `owner` den Besitzer, sonst `owner: ""` mit `TODO(onboarding)`. `azure-pipelines.yml` bekommt den Laufzeitparameter `allowBreakingConnectorChanges` und die auskommentierten Schalter `treatWarningsAsErrors` und `checkConnectorConnections` erst mit `pipelines_version` ab v0.17.0; ältere Versionen von `web-app.yml` lehnen unbekannte Parameter ab.
 
 PR-Validierung (`pr_validation`, Standard `true`): eine Branch-Policy auf `main`, nach der Pull Requests einen erfolgreichen Lauf der Projekt-Pipeline brauchen. Die Pipeline erkennt PR-Läufe selbst und baut, testet und sucht dann nur nach Secrets, ohne Deploy und ohne Service Connection; eine zweite Pipeline-Definition ist nicht nötig. Ein Ergebnis gilt 12 Stunden, auch wenn sich `main` ändert. Die Policy ist Pflicht und sperrt damit direkte Pushes auf `main`; sie entsteht deshalb erst nach den Dateien, die das Modul direkt auf `main` schreibt.
 
@@ -326,10 +350,11 @@ Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Detai
 ```hcl
 module "monitoring" {
   source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
-  count  = length(local.alert_emails) > 0 ? 1 : 0
+  count  = length(local.alert_emails) > 0 || (local.owner != null && local.owner != "") ? 1 : 0
 
   name                       = local.cfg.project
   environment                = var.environment
+  owner                      = local.owner
   resource_group_name        = module.core.resource_group_name
   resource_group_id          = module.core.resource_group_id
   location                   = module.core.location
@@ -338,8 +363,11 @@ module "monitoring" {
   alert_emails               = local.alert_emails
   health_check_url           = "${module.core.function_app_url}/api/health"
   budget_amount              = 20
+  key_vault_ids              = { for m in module.keyvault : "keyvault" => m.key_vault_id }
 }
 ```
+
+Mit `key_vault_ids` meldet das Modul, wenn ein Secret mit Ablaufdatum in 30 Tagen abläuft und wenn es abgelaufen ist (Event Grid mit dem Ziel „Azure Monitor alert“, ohne eigenen Code). Dafür muss der Ressourcenanbieter `Microsoft.EventGrid` registriert sein; Details in [monitoring/README.md](monitoring/README.md#ablauf-von-secrets).
 
 Bis v0.12.0 rief ein Webtest den Health-Endpunkt alle 15 Minuten aus zwei Standorten auf. Seit v0.13.0 übernimmt das eine Logic App, standardmäßig alle 4 Stunden (`health_check_interval_hours`); `health_check_frequency` und `health_check_locations` entfallen. Beim Umstieg entfernt der Apply den Webtest und ersetzt den Alarm `alert-…-health` durch `alert-…-health-check`.
 
@@ -396,6 +424,10 @@ terraform -chdir=examples/ado-project validate
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:
 
 ```bash
+terraform -chdir=core init -backend=false
+terraform -chdir=core test
+terraform -chdir=keyvault init -backend=false
+terraform -chdir=keyvault test
 terraform -chdir=sso init -backend=false
 terraform -chdir=sso test
 terraform -chdir=monitoring init -backend=false

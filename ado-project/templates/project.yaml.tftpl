@@ -1,6 +1,16 @@
 # Einzige Wahrheit über Projekt und Features. Terraform und Pipeline lesen diese Datei.
 project: ${name}
 
+# Besitzer des Projekts: E-Mail-Adresse eines Teams oder Verteilers, z. B. team@example.org.
+# Terraform setzt sie als Tag owner an alle Azure-Ressourcen und als Notiz an die
+# App-Registrierungen; sie bekommt alle Alarme, auch vor dem Ablauf von Secrets. Leer: nichts davon.
+%{ if owner != null ~}
+owner: ${jsonencode(owner)}
+%{ else ~}
+# TODO(onboarding): Adresse eintragen.
+owner: ""
+%{ endif ~}
+
 features:
   # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend
   sso: ${features.sso}
@@ -12,7 +22,7 @@ features:
   # Key Vault für Secrets von Drittanbietern (API-Keys, Passwörter); Namen unter keyVault
   keyVault: false
   # Custom Connector für Power Automate, Power Apps und Copilot Studio, setzt sso voraus;
-  # Power-Platform-Umgebung unter customConnector.environmentUrl (README von seed-template)
+  # Power-Platform-Umgebung unter customConnector: (unten)
   customConnector: false
 
 hosting:
@@ -20,8 +30,13 @@ hosting:
   # (kein Frontend, nur API; dazu in azure-pipelines.yml frontend: false)
   staticWebApp: ${frontend ? "Free" : "none"}
   # Eigene Domains der Static Web App, z. B. [app.example.org]. Die nötigen DNS-Einträge
-  # stehen nach dem Apply im Terraform-Output custom_domain_dns_records.
+  # stehen nach dem Apply im Terraform-Output custom_domain_dns_records. Meist nur für eine
+  # Umgebung, dann unter environments.<name>.hosting (unten).
   customDomains: []
+  # Weitere Origins für die CORS-Freigabe der API, z. B. eine Website, die eine öffentliche Route
+  # aus dem Browser aufruft: [https://www.example.org]. Static Web App und eigene Domains sind
+  # immer freigegeben, in dev zusätzlich http://localhost:5173.
+  corsAllowedOrigins: []
 
 # Rollen der API und was sie dürfen, wirksam mit sso. Terraform legt je Rolle eine App-Rolle in
 # Entra an, Personen und Gruppen weist ein Admin dort zu. Die API löst aus den Rollen im Token die
@@ -34,9 +49,12 @@ auth:
       description: Verwaltet die Anwendung
       # User (Personen und Gruppen), Application (Dienste ohne angemeldete Person) oder beide
       memberTypes: [User]
-      capabilities: [settings.manage, status.read]
-  # Zuweisung erforderlich: Nur Personen und Anwendungen mit einer Rolle bekommen ein Token.
-  assignmentRequired: false
+      capabilities: [settings.manage, status.read, jobs.run]
+  # Zuweisung erforderlich (Standard): Nur Personen, Gruppen und Anwendungen, denen ein Admin in
+  # Entra eine Rolle zugewiesen hat, bekommen ein Token; bis dahin kommt niemand herein. Mit false
+  # bekommt jedes Konto des Tenants eines: Functions mit [RequireCapability] oder [RequireAnyRole]
+  # lehnen es ohne Rolle ab, solche mit [AllowWithoutRole] nicht. Ohne Angabe gilt false.
+  assignmentRequired: true
   # Personen-Komponenten im Frontend (seed-web-people): Profilbilder, Personensuche und
   # Teams-Status kommen mit dem Token der angemeldeten Person direkt aus Microsoft Graph.
   # Terraform trägt die Berechtigungen an der App-Registrierung des Frontends ein, zustimmen muss
@@ -45,6 +63,7 @@ auth:
   #   enabled: true       # Fotos, Profile, Suche: User.Read, User.ReadBasic.All, People.Read
   #   presence: true      # Teams-Status: Presence.Read.All
   #   roleFilter: false   # Auswahl nur mit App-Rolle: Application.Read.All, GroupMember.Read.All (Admin-Consent!)
+  #   servicePrincipals: false   # auch Anwendungen und verwaltete Identitäten: Application.Read.All (Admin-Consent!)
   # Vorhandene App-Registrierung je Umgebung statt neuer, auch aus einem anderen Tenant.
   # Was der Admin dort einrichtet: README von seed-terraform, Modul sso.
   # existingRegistration:
@@ -56,6 +75,46 @@ auth:
   # Weitere Redirect-URIs der SPA ohne Bridge-Seite, etwa für eine Browser-Erweiterung (README,
   # „Browser-Erweiterungen“); meist je Umgebung:
   # extraRedirectUris: [https://<erweiterungs-id>.chromiumapp.org/]
+  # Weitere Anwendungen (Client-ID), deren delegierte Tokens die API annimmt, etwa eine andere App
+  # mit Admin-Zustimmung. Frontend, Custom Connector und MCP-Clients sind schon zugelassen.
+  # additionalClientIds: [00000000-0000-0000-0000-000000000000]
+
+# Nur mit features.mcp, alles optional:
+# mcp:
+#   # Eigene, im Tenant verifizierte Domain der Function. Claude und Claude Code brauchen sie,
+#   # VS Code nicht. DNS, Bindung und Zertifikat: README, Abschnitt mcp.
+#   customDomain: mcp.example.org
+#   # Ersetzt die Redirect-URIs der MCP-Client-Registrierung (Standard: Claude, Claude Code).
+#   redirectUris: [https://claude.ai/api/mcp/auth_callback, http://localhost/callback, http://127.0.0.1/callback]
+
+# Nur mit features.customConnector. Die Pipeline legt den Connector nach dem Deploy aus dem
+# OpenAPI-Dokument der API an (README, Abschnitt customConnector). Ohne environmentUrl entsteht in
+# einer Umgebung keiner.
+# customConnector:
+#   # Umgebungs-URL der Power-Platform-Umgebung (Power Platform Admin Center), meist je Umgebung
+#   # unter environments.<name>.customConnector (unten)
+#   environmentUrl: https://org0000000.crm4.dynamics.com
+#   # Anzeigename, höchstens 30 Zeichen aus Buchstaben, Ziffern, Leerzeichen, - und _
+#   # (Standard: <project> <umgebung>)
+#   displayName: My App
+#   # Wer den Connector sieht: everyone (alle in der Power-Platform-Umgebung, Standard) oder none
+#   shareWith: everyone
+
+monitoring:
+  # Empfänger von Alarmen und Budget-Warnungen (Adresse oder Verteiler), z. B.
+  # [betrieb@example.org], zusätzlich zu owner. Ohne Empfänger und ohne owner gibt es keine
+  # Alarme und kein Budget.
+  recipients: []
+  # Monatsbudget der Resource Group je Umgebung in der Abrechnungswährung, z. B.
+  # { dev: 20, prod: 100 }. Warnung bei 80 % und wenn die Prognose den Betrag übersteigt.
+  budget: {}
+  # Alarm ab so vielen Exceptions in einer Stunde
+  exceptionsPerHour: 5
+  # Abstand der Health-Checks auf /api/health in Stunden (1 bis 12). Jeder Aufruf startet die
+  # Function nach einer Ruhephase und schreibt Logs; seltener spart Freikontingent und Log-Kosten.
+  healthCheckHours: 4
+  # Tageslimit für Logs in GB; danach nimmt Azure bis 0 Uhr UTC keine Telemetrie mehr an
+  dailyCapGb: 1
 
 # Nur mit features.keyVault. Terraform legt je Secret einen Platzhalter an; den Wert setzt ein
 # Mensch per CLI oder Portal (README, „Secret setzen“). Die Function liest stripe-key als
@@ -98,6 +157,18 @@ storage:
 # settings:
 #   Beispiel__Zeitzone: Europe/Berlin
 
+# Ausnahmen von den Prüfungen im Build der Pipeline, jede nur mit Begründung (reason). Sie steht so
+# im Pull Request und im Log. Beispiel:
+# build:
+#   # Vorabversion eines direkt referenzierten NuGet-Pakets (Paket-ID); sonst bricht der Build ab
+#   prereleasePackages:
+#     - name: Some.Package
+#       reason: Behebt einen Fehler, den das Projekt braucht; die stabile Version fehlt noch
+#   # Bekannte Sicherheitslücke (High, Critical) bewusst hinnehmen: GHSA-ID oder URL der Advisory
+#   ignoreAdvisories:
+#     - id: GHSA-xxxx-xxxx-xxxx
+#       reason: Die betroffene Funktion nutzt das Projekt nicht
+
 # Abweichungen je Umgebung; der Name entspricht environments[].name in azure-pipelines.yml.
 # Rangfolge der App-Settings: Seed-eigene vor environments.<name>.settings vor settings.
 # environments:
@@ -108,6 +179,14 @@ storage:
 #       Beispiel__Mocks: "true"
 #   prod:
 #     maxInstances: 4
+#     hosting:                        # ersetzt customDomains bzw. corsAllowedOrigins aus hosting
+#       customDomains: [app.example.org]
+#       corsAllowedOrigins: [https://www.example.org]
+#     mcp:                            # ersetzt einzelne Angaben aus mcp
+#       customDomain: mcp.example.org
+#     customConnector:                # ersetzt einzelne Angaben aus customConnector
+#       environmentUrl: https://org1111111.crm4.dynamics.com
+#       displayName: My App
 #     auth:
 #       directory: { enabled: false }   # überschreibt einzelne Schalter aus auth.directory
 #       extraRedirectUris: [https://<erweiterungs-id>.chromiumapp.org/]   # ersetzt auth.extraRedirectUris

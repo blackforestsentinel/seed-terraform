@@ -211,3 +211,147 @@ run "vorhandenes_repo" {
     error_message = "Outputs aus dem vorhandenen Repo und dem Projekt."
   }
 }
+
+# Eigener State: Frühere Läufe haben die Dateien schon angelegt, und ignore_changes hielte den
+# alten Inhalt fest.
+run "project_yaml_ohne_owner" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "# TODO(onboarding): Adresse eintragen.\nowner: \"\"\n")
+    error_message = "Ohne owner steht in project.yaml ein leerer Eintrag mit TODO(onboarding), wie im Template."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).owner == ""
+    error_message = "owner ist ohne Angabe ein leerer Text."
+  }
+}
+
+run "project_yaml_mit_leerem_owner" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "# TODO(onboarding): Adresse eintragen.\nowner: \"\"\n")
+    error_message = "Ein leerer owner wirkt wie null: owner: \"\" mit TODO(onboarding)."
+  }
+}
+
+run "project_yaml_mit_owner" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    owner = "team@example.org"
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "\nowner: \"team@example.org\"\n") && !strcontains(azuredevops_git_repository_file.project_yaml.content, "TODO(onboarding): Adresse")
+    error_message = "owner steht auf oberster Ebene in project.yaml, ohne TODO."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).owner == "team@example.org"
+    error_message = "project.yaml bleibt gültiges YAML, owner ist ein Schlüssel der obersten Ebene."
+  }
+}
+
+# Stand wie project.yaml in seed-template: dieselben Schlüssel und Standardwerte.
+run "project_yaml_wie_im_template" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    features = { sso = true, mcp = false, storage = true }
+    frontend = false
+  }
+
+  assert {
+    condition = alltrue([
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).project == "kundenportal",
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).features == { sso = true, mcp = false, storage = true, keyVault = false, customConnector = false },
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).hosting == { staticWebApp = "none", customDomains = [], corsAllowedOrigins = [] },
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).auth.assignmentRequired == true,
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).auth.roles.Admin.capabilities == ["settings.manage", "status.read", "jobs.run"],
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).monitoring.recipients == [],
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).storage.deletionLock == true,
+    ])
+    error_message = "project.yaml hat die Schlüssel und Standardwerte des Templates, mit Features und Frontend aus den Variablen; Admin hat jobs.run für das Beispiel CreateJob und GetJob."
+  }
+
+  assert {
+    condition = alltrue([
+      for text in ["#   servicePrincipals: false", "# build:", "#   prereleasePackages:", "#   ignoreAdvisories:", "#     hosting:", "solche mit [AllowWithoutRole] nicht. Ohne Angabe gilt false."] :
+      strcontains(azuredevops_git_repository_file.project_yaml.content, text)
+    ])
+    error_message = "Die Kommentare und auskommentierten Abschnitte des Templates sind dabei, etwa build, auth.directory.servicePrincipals und der Hinweis zu assignmentRequired."
+  }
+}
+
+run "pipeline_ohne_connector_parameter_bei_alter_version" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  assert {
+    condition = alltrue([
+      for text in ["allowBreakingConnectorChanges", "checkConnectorConnections", "treatWarningsAsErrors"] :
+      !strcontains(azuredevops_git_repository_file.pipeline.content, text)
+    ])
+    error_message = "Vor seed-pipelines v0.17.0 keine neuen Parameter, auch nicht auskommentiert; ältere Versionen lehnen sie ab."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.confirmDataDeletion == "$${{ parameters.confirmDataDeletion }}"
+    error_message = "confirmDataDeletion wird weiter durchgereicht."
+  }
+}
+
+run "pipeline_mit_connector_parametern" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    pipelines_version = "v0.17.0"
+  }
+
+  assert {
+    condition     = [for p in yamldecode(azuredevops_git_repository_file.pipeline.content).parameters : p.name] == ["confirmDataDeletion", "allowBreakingConnectorChanges"]
+    error_message = "Laufzeitparameter wie im Template: Datenlöschung bestätigen und Breaking Changes am Custom Connector zulassen."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.pipeline.content).parameters[1] == { name = "allowBreakingConnectorChanges", displayName = "Breaking Changes am Custom Connector zulassen", type = "boolean", default = false }
+    error_message = "allowBreakingConnectorChanges ist ein Boolean mit Default false."
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.allowBreakingConnectorChanges == "$${{ parameters.allowBreakingConnectorChanges }}"
+    error_message = "allowBreakingConnectorChanges wird wie confirmDataDeletion an web-app.yml durchgereicht."
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.pipeline.content, "\n    # checkConnectorConnections: true\n") && !contains(keys(yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters), "checkConnectorConnections")
+    error_message = "checkConnectorConnections steht nur auskommentiert da (Opt-in)."
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.pipeline.content, "\n    # treatWarningsAsErrors: false\n") && !contains(keys(yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters), "treatWarningsAsErrors")
+    error_message = "treatWarningsAsErrors bleibt beim Standard true und steht nur auskommentiert da."
+  }
+}
+
+run "owner_nur_als_mail" {
+  command = plan
+
+  variables {
+    owner = "kein Postfach"
+  }
+
+  expect_failures = [var.owner]
+}

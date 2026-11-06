@@ -88,9 +88,25 @@ variable "app_settings" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Zusätzliche CORS-Origins. Die URL der Static Web App und die eigenen Domains sind immer freigegeben."
+  description = "Zusätzliche CORS-Origins, einzeln, z. B. https://www.example.org. Die URL der Static Web App und die eigenen Domains sind immer freigegeben. Ein * und den Origin null lehnt das Modul ab."
   type        = list(string)
   default     = []
+  nullable    = false
+
+  # Mit * dürfte jede Website die API aus dem Browser aufrufen und die Antworten lesen. Das gilt
+  # auch für Platzhalter wie https://*.example.org: Jede Subdomain wäre freigegeben, auch eine
+  # übernommene oder fremd gehostete.
+  validation {
+    condition     = alltrue([for origin in var.cors_allowed_origins : !strcontains(origin, "*")])
+    error_message = "cors_allowed_origins: kein *, sonst dürfte jede Website die API aus dem Browser aufrufen. Origins einzeln angeben, z. B. https://www.example.org."
+  }
+
+  # Den Origin null senden Browser für Sandbox-iframes, data:- und file:-Seiten; jede Website kann
+  # ihn mit einem solchen iframe erzeugen.
+  validation {
+    condition     = alltrue([for origin in var.cors_allowed_origins : lower(trimspace(origin)) != "null"])
+    error_message = "cors_allowed_origins: kein Origin null, den kann jede Website über ein Sandbox-iframe senden."
+  }
 }
 
 variable "log_retention_days" {
@@ -115,4 +131,16 @@ variable "tags" {
   description = "Zusätzliche Tags für alle Ressourcen."
   type        = map(string)
   default     = {}
+  nullable    = false
+}
+
+variable "owner" {
+  description = "Besitzer und Ansprechpartner des Projekts, eine E-Mail-Adresse oder ein Verteiler, z. B. team@example.org (im Template owner in project.yaml). Steht als Tag owner an allen Ressourcen und ersetzt einen Tag owner aus tags, gleich wie geschrieben (etwa Owner). null oder leer: kein Tag."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.owner == null || var.owner == "" || can(regex("^[^@\\s]+@[^@\\s]+[.][^@\\s]+$", var.owner))
+    error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org, oder leer."
+  }
 }

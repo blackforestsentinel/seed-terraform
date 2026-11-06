@@ -66,6 +66,12 @@ app_settings = { Legacy__ApiToken = module.keyvault[0].references["legacy-api-to
 
 `Bfs.Seed.Functions.Core` prüft beim Start alle App-Settings, nicht nur `Secrets__*`.
 
+Dazu setzt das Modul `Seed__KeyVaultUri` mit der URI des Vaults (`https://<name>.vault.azure.net/`). Zur Laufzeit enthalten die App-Settings nur die aufgelösten Werte, nicht die Referenzen; mit der URI liest `Bfs.Seed.Functions.Core` die Ablaufdaten der Secrets für den Health-Report. Die Rolle `Key Vault Secrets User` der Function reicht dafür (`readMetadata`). Ohne das Setting fehlen dort nur die Ablaufdaten.
+
+Der Wert kommt aus `vault_uri` des Vaults, nicht aus dem Namen: Azure liefert die URI mit der passenden Endung, auch außerhalb der öffentlichen Cloud. Bei einem vorhandenen Vault ist sie schon beim Plan bekannt; nur wenn der Vault im selben Apply entsteht, steht im Plan „known after apply“, und dann ändern sich die App-Settings ohnehin.
+
+Umstieg: Bestehende Projekte mit Key Vault sehen im ersten Plan nach dem Update eine Änderung der App-Settings an der Function App, an Ort und Stelle; die Pipeline verlangt dafür einmal die Freigabe, die Function startet danach neu.
+
 ## Platzhalter
 
 Die Platzhalter entstehen über Azure Resource Manager (`Microsoft.KeyVault/vaults/secrets` per `azapi_resource_action`), nicht über die Datenebene des Vaults:
@@ -111,6 +117,10 @@ Key-Vault-Referenzen funktionieren auf Flex Consumption, wenn `keyVaultReference
 
 Den Status jeder Referenz zeigt `GET …/config/configreferences/appsettings?api-version=2022-03-01` (`Resolved`, `SecretNotFound`, `AccessToKeyVaultDenied` …); jedes Setting erscheint dort zusätzlich als `APPSETTING_<Name>`. Einen Platzhalter meldet ARM als `Resolved`; den erkennt erst `Bfs.Seed.Functions.Core`.
 
+## Ablaufdatum
+
+Ein Secret darf ein Ablaufdatum tragen (`az keyvault secret set … --expires 2027-06-30T00:00:00Z` oder `az keyvault secret set-attributes … --expires …`); Seed erzwingt keines. Key Vault liefert ein abgelaufenes Secret weiter aus, das Datum ist ein Hinweis für Menschen. Das Modul [`monitoring`](../monitoring/README.md#ablauf-von-secrets) meldet mit `key_vault_ids = { for m in module.keyvault : "keyvault" => m.key_vault_id }` 30 Tage vor dem Ablauf und beim Ablauf an seine Empfänger. Ein neuer Wert ohne `--expires` hat kein Ablaufdatum mehr.
+
 ## Soft Delete und Purge-Schutz
 
 Beides ist immer an. Ein gelöschter Vault und jedes gelöschte Secret bleiben bis zum Ende der Frist wiederherstellbar; vorher kann niemand sie endgültig entfernen, auch kein Owner.
@@ -148,6 +158,6 @@ Eine Datenrolle auf dem Vault braucht die ausführende Identität nicht.
 
 ## Ein- und Ausgaben
 
-Eingaben: `name`, `environment`, `resource_group_name`, `location`, `function_identity_principal_id`, `secrets`, `secret_officers`, `soft_delete_retention_days` (Default 90), `tags`.
+Eingaben: `name`, `environment`, `resource_group_name`, `location`, `function_identity_principal_id`, `secrets`, `secret_officers`, `soft_delete_retention_days` (Default 90), `audit_logs`, `owner` (Tag `owner` am Vault, siehe [README des Repos](../README.md#besitzer-owner)), `tags`.
 
-Ausgaben: `app_settings` (`Secrets__<Name>` als Referenz, erst nach Rolle und Platzhaltern), `references` (Referenz je Secret-Name), `setting_names` (App-Setting je Secret-Name), `key_vault_name`, `key_vault_uri`, `key_vault_id`.
+Ausgaben: `app_settings` (`Secrets__<Name>` als Referenz und `Seed__KeyVaultUri`, erst nach Rolle und Platzhaltern), `references` (Referenz je Secret-Name), `setting_names` (App-Setting je Secret-Name), `key_vault_name`, `key_vault_uri`, `key_vault_id`.

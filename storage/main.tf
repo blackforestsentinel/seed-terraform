@@ -21,13 +21,20 @@ locals {
     "Storage Table Data Contributor",
   ])
 
+  # Leerer Text gilt wie null: Das Template liefert owner: "" aus, bis jemand eine Adresse einträgt.
+  owner = var.owner == "" ? null : var.owner
+
   tags = merge(
     {
       "seed:project"     = var.name
       "seed:environment" = var.environment
       "seed:module"      = "storage"
     },
-    var.tags,
+    # Mit owner fällt ein Tag owner aus tags weg, gleich wie geschrieben: merge() unterscheidet
+    # Owner und owner, Azure nicht.
+    { for k, v in var.tags : k => v if local.owner == null || lower(k) != "owner" },
+    # Ohne owner kein Tag, der Storage Account bleibt dann unverändert.
+    local.owner == null ? {} : { owner = local.owner },
   )
 }
 
