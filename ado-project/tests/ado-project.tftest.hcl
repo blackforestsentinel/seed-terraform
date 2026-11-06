@@ -287,10 +287,10 @@ run "project_yaml_wie_im_template" {
 
   assert {
     condition = alltrue([
-      for text in ["#   servicePrincipals: false", "# build:", "#   prereleasePackages:", "#   ignoreAdvisories:", "#     hosting:"] :
+      for text in ["#   servicePrincipals: false", "# build:", "#   prereleasePackages:", "#   ignoreAdvisories:", "#     hosting:", "solche mit [AllowWithoutRole] nicht. Ohne Angabe gilt false."] :
       strcontains(azuredevops_git_repository_file.project_yaml.content, text)
     ])
-    error_message = "Die auskommentierten Abschnitte des Templates sind dabei, etwa build und auth.directory.servicePrincipals."
+    error_message = "Die Kommentare und auskommentierten Abschnitte des Templates sind dabei, etwa build, auth.directory.servicePrincipals und der Hinweis zu assignmentRequired."
   }
 }
 

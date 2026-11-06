@@ -52,8 +52,8 @@ auth:
       capabilities: [settings.manage, status.read, jobs.run]
   # Zuweisung erforderlich (Standard): Nur Personen, Gruppen und Anwendungen, denen ein Admin in
   # Entra eine Rolle zugewiesen hat, bekommen ein Token; bis dahin kommt niemand herein. Mit false
-  # bekommt jedes Konto des Tenants eines: Functions mit [RequireCapability] lehnen es ohne Rolle
-  # ab, alle anderen nicht.
+  # bekommt jedes Konto des Tenants eines: Functions mit [RequireCapability] oder [RequireAnyRole]
+  # lehnen es ohne Rolle ab, solche mit [AllowWithoutRole] nicht. Ohne Angabe gilt false.
   assignmentRequired: true
   # Personen-Komponenten im Frontend (seed-web-people): Profilbilder, Personensuche und
   # Teams-Status kommen mit dem Token der angemeldeten Person direkt aus Microsoft Graph.
