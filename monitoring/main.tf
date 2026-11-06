@@ -270,6 +270,10 @@ resource "azapi_resource" "secret_expiry" {
   # Azure kann die ID der Aktionsgruppe in anderer Schreibweise zurückgeben; ohne das zeigte jeder
   # Plan eine Änderung, und die Pipeline verlangte jedes Mal eine Freigabe.
   ignore_casing = true
+
+  # Die Abonnements eines Topics nacheinander: Event Grid antwortet auf gleichzeitige Änderungen
+  # am selben Topic gelegentlich mit 409 Conflict.
+  locks = [azurerm_eventgrid_system_topic.key_vault[each.value.vault].id]
 }
 
 # --- Budget ---------------------------------------------------------------------

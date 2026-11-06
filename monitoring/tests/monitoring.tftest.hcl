@@ -283,9 +283,10 @@ run "secret_ablauf_an_die_aktionsgruppe" {
       s.body.properties.eventDeliverySchema == "CloudEventSchemaV1_0" &&
       s.body.properties.destination.properties.actionGroups == [azurerm_monitor_action_group.this.id] &&
       s.parent_id == azurerm_eventgrid_system_topic.key_vault["keyvault"].id &&
+      s.locks == tolist([azurerm_eventgrid_system_topic.key_vault["keyvault"].id]) &&
       s.type == "Microsoft.EventGrid/systemTopics/eventSubscriptions@2025-02-15"
     ])
-    error_message = "Event Grid meldet als Alarm in Azure Monitor an die Aktionsgruppe, im CloudEvents-Schema."
+    error_message = "Event Grid meldet als Alarm in Azure Monitor an die Aktionsgruppe, im CloudEvents-Schema; die Abonnements eines Topics entstehen nacheinander."
   }
 
   assert {

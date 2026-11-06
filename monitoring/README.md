@@ -68,7 +68,7 @@ az keyvault secret set-attributes --vault-name "$KV" --name stripe-key --expires
 
 Welches Secret betroffen ist, zeigt der Alarm in seinen Details (Azure Monitor, Alarme): `ObjectName` und `EXP` aus den Daten des Ereignisses. Eine Entwarnung gibt es bei diesen Alarmen nicht, denn es gibt keine Bedingung, die wieder entfällt; nach dem Tausch des Secrets schließt man den Alarm im Portal.
 
-**Warum Event Grid mit dem Ziel „Azure Monitor alert“.** Es ist der einfachste Weg ohne eigenen Code und ohne Zeitplan: Key Vault meldet das Ereignis selbst, Event Grid stellt es zu, die Aktionsgruppe verschickt die Mail. Microsoft bietet das Ziel für Ereignisse von Key Vault an, seit Anfang 2026 nicht mehr als Vorschau; die API-Version `2025-02-15` ist stabil. Verworfen:
+**Warum Event Grid mit dem Ziel „Azure Monitor alert“.** Es ist der einfachste Weg ohne eigenen Code und ohne Zeitplan: Key Vault meldet das Ereignis selbst, Event Grid stellt es zu, die Aktionsgruppe verschickt die Mail. Microsoft bietet das Ziel für Ereignisse von Key Vault an; die Microsoft-Doku kennzeichnet es nicht mehr als Vorschau (Stand November 2026), und die API-Version `2025-02-15` ist stabil. Verworfen:
 
 - Logic App oder Function als Empfänger: mehr Teile, die ausfallen können; eine Logic App bräuchte für Mails zudem eine eigene Verbindung (Office 365 oder SMTP) mit Anmeldedaten.
 - Abfrage-Alarm im Log Analytics Workspace: Das Audit-Log des Vaults enthält keine Ablaufdaten.
@@ -81,7 +81,11 @@ azurerm kennt das Ziel bis Version 5 nicht. Das Abonnement entsteht deshalb per 
 - Es zählt die aktuelle Version. Wer einen neuen Wert ohne `--expires` setzt, bekommt keine Meldung mehr, auch wenn die alte Version ein Ablaufdatum hatte.
 - Die Vorwarnung kommt fest 30 Tage vorher. Liegt das Ablaufdatum beim Setzen schon näher, ist nicht sicher, dass sie noch kommt; spätestens beim Ablauf meldet sich der zweite Alarm.
 - Key Vault liefert ein abgelaufenes Secret weiter aus; das Ablaufdatum ist ein Hinweis, meist auf den Ablauf des Schlüssels beim Anbieter. Die Function läuft also weiter, bis der Anbieter den alten Schlüssel ablehnt.
-- Je Vault gibt es höchstens ein System-Topic. Hat jemand im Portal unter „Ereignisse“ schon eines angelegt, scheitert der Apply; dann das vorhandene Topic löschen oder per `terraform import` übernehmen.
+- Je Vault gibt es höchstens ein System-Topic. Hat jemand im Portal unter „Ereignisse“ schon eines angelegt, scheitert der Apply. Dann gibt es zwei Wege:
+  - Das vorhandene Topic löschen. Azure löscht dabei alle Abonnements daran; wer sie angelegt hat, sollte vorher Bescheid wissen und sie danach am neuen Topic `egst-…` wieder anlegen.
+  - Für diesen Vault auf den Alarm verzichten, also ihn aus `key_vault_ids` lassen.
+
+  `terraform import` hilft nicht: Das vorhandene Topic heißt anders (im Portal `<vault>-<guid>`), der Name lässt sich nicht ändern, und Terraform ersetzte es beim nächsten Apply. Mit dem Topic löschte Azure auch hier alle fremden Abonnements. Eine Variable für ein vorhandenes Topic gibt es nicht, der Fall ist selten.
 - Das System-Topic liegt in `location`; der Vault muss in derselben Region liegen, wie beim Modul `keyvault`.
 
 **Testen:** Ein Secret mit Ablauf in wenigen Minuten anlegen (`az keyvault secret set --vault-name "$KV" --name expiry-test --value test --expires <in 5 Minuten, UTC>`). Nach dem Ablauf kommt der Alarm `secret-expired`. Danach `az keyvault secret delete --vault-name "$KV" --name expiry-test`.
