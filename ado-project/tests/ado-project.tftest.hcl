@@ -229,6 +229,20 @@ run "project_yaml_ohne_owner" {
   }
 }
 
+run "project_yaml_mit_leerem_owner" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = strcontains(azuredevops_git_repository_file.project_yaml.content, "# TODO(onboarding): Adresse eintragen.\nowner: \"\"\n")
+    error_message = "Ein leerer owner wirkt wie null: owner: \"\" mit TODO(onboarding)."
+  }
+}
+
 run "project_yaml_mit_owner" {
   command   = plan
   state_key = "scaffold_files"

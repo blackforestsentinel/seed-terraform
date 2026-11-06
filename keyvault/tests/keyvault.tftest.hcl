@@ -55,6 +55,19 @@ run "owner_als_tag" {
   }
 }
 
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_key_vault.this.tags), "owner")
+    error_message = "Ein leerer owner wirkt wie null: kein Tag."
+  }
+}
+
 run "owner_nur_als_mail" {
   command = plan
 

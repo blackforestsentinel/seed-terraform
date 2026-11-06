@@ -79,6 +79,41 @@ run "owner_geht_tags_vor" {
   }
 }
 
+# Azure unterscheidet bei Tag-Namen keine Groß- und Kleinschreibung, merge() schon.
+run "owner_ersetzt_tag_in_anderer_schreibweise" {
+  command = plan
+
+  variables {
+    owner = "team@example.org"
+    tags  = { Owner = "alt@example.org", OWNER = "noch-aelter@example.org", kostenstelle = "4711" }
+  }
+
+  assert {
+    condition = azurerm_resource_group.this.tags == tomap({
+      "seed:project"     = "example"
+      "seed:environment" = "dev"
+      "seed:module"      = "core"
+      owner              = "team@example.org"
+      kostenstelle       = "4711"
+    })
+    error_message = "Mit owner fällt jeder Tag owner aus tags weg, gleich wie geschrieben."
+  }
+}
+
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+    tags  = { Owner = "alt@example.org" }
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_resource_group.this.tags), "owner") && azurerm_resource_group.this.tags["Owner"] == "alt@example.org"
+    error_message = "Ein leerer owner wirkt wie null: kein Tag owner, tags bleiben unverändert."
+  }
+}
+
 run "owner_nur_als_mail" {
   command = plan
 

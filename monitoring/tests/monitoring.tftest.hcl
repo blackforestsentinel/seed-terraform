@@ -188,6 +188,34 @@ run "nur_owner" {
   }
 }
 
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+    tags  = { Owner = "alt@example.org" }
+  }
+
+  assert {
+    condition     = [for r in azurerm_monitor_action_group.this.email_receiver : r.name] == ["mail-0"] && !contains(keys(azurerm_monitor_action_group.this.tags), "owner")
+    error_message = "Ein leerer owner wirkt wie null: kein Empfänger, kein Tag."
+  }
+}
+
+run "owner_ersetzt_tag_in_anderer_schreibweise" {
+  command = plan
+
+  variables {
+    owner = "team@example.org"
+    tags  = { Owner = "alt@example.org" }
+  }
+
+  assert {
+    condition     = azurerm_monitor_action_group.this.tags["owner"] == "team@example.org" && !contains(keys(azurerm_monitor_action_group.this.tags), "Owner")
+    error_message = "owner ersetzt einen Tag Owner aus tags."
+  }
+}
+
 run "owner_nur_als_mail" {
   command = plan
 

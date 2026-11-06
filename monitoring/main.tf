@@ -11,24 +11,29 @@ locals {
     var.health_check_interval_hours < 12 ? "PT12H" : "P1D"
   )
 
+  # Leerer Text gilt wie null: Das Template liefert owner: "" aus, bis jemand eine Adresse einträgt.
+  owner = var.owner == "" ? null : var.owner
+
   tags = merge(
     {
       "seed:project"     = var.name
       "seed:environment" = var.environment
       "seed:module"      = "monitoring"
     },
-    var.tags,
+    # Mit owner fällt ein Tag owner aus tags weg, gleich wie geschrieben: merge() unterscheidet
+    # Owner und owner, Azure nicht.
+    { for k, v in var.tags : k => v if local.owner == null || lower(k) != "owner" },
     # Ohne owner kein Tag, bestehende Ressourcen bleiben dann unverändert.
-    var.owner == null ? {} : { owner = var.owner },
+    local.owner == null ? {} : { owner = local.owner },
   )
 
   # Der Besitzer bekommt die Meldungen zusätzlich, außer er steht schon unter alert_emails;
   # E-Mail-Adressen unterscheiden in der Praxis nicht nach Groß- und Kleinschreibung. Er kommt
   # ans Ende, so behalten die bisherigen Empfänger ihre Namen mail-0, mail-1, …
-  owner_is_recipient = var.owner == null ? true : contains([for e in var.alert_emails : lower(e)], lower(var.owner))
+  owner_is_recipient = local.owner == null ? true : contains([for e in var.alert_emails : lower(e)], lower(local.owner))
   email_receivers = concat(
     [for i, e in var.alert_emails : { name = "mail-${i}", email = e }],
-    local.owner_is_recipient ? [] : [{ name = "owner", email = var.owner }],
+    local.owner_is_recipient ? [] : [{ name = "owner", email = local.owner }],
   )
 }
 

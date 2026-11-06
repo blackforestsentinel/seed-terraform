@@ -5,11 +5,12 @@ Alarme und Budget für ein Seed-Projekt, je Umgebung. Das Modul baut auf `core` 
 ```hcl
 module "monitoring" {
   source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
-  count  = length(local.alert_emails) > 0 || local.owner != null ? 1 : 0
+  # Leerer owner zählt nicht als Empfänger
+  count  = length(local.alert_emails) > 0 || (local.owner != null && local.owner != "") ? 1 : 0
 
   name                       = local.cfg.project
   environment                = var.environment
-  owner                      = local.owner # owner in project.yaml oder null
+  owner                      = local.owner # owner in project.yaml, leer oder null
   resource_group_name        = module.core.resource_group_name
   resource_group_id          = module.core.resource_group_id
   location                   = module.core.location
@@ -122,7 +123,7 @@ Budgets gibt es nur für Subscriptions mit Cost Management (Pay-as-you-go, EA, M
 | `name`, `environment` | wie bei `core` | |
 | `resource_group_name`, `resource_group_id`, `location`, `application_insights_id`, `log_analytics_workspace_id` | Outputs von `core` | |
 | `alert_emails` | Empfänger; ohne sie und ohne `owner` das Modul weglassen | `[]` |
-| `owner` | Besitzer: zusätzlicher Empfänger `owner` und Tag `owner` an allen Ressourcen ([README des Repos](../README.md#besitzer-owner)); `null` ohne | `null` |
+| `owner` | Besitzer: zusätzlicher Empfänger `owner` und Tag `owner` an allen Ressourcen ([README des Repos](../README.md#besitzer-owner)); `null` oder leer: ohne | `null` |
 | `exception_threshold` | Exceptions je Stunde, ab denen der Alarm kommt | `5` |
 | `health_check_url` | URL für den Health-Check; `null` ohne Health-Check | `null` |
 | `health_check_interval_hours` | Stunden zwischen den Läufen, 1 bis 12 | `4` |

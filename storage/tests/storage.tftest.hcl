@@ -128,7 +128,12 @@ run "owner_als_tag" {
 
   variables {
     owner = "team@example.org"
-    tags  = { owner = "alt@example.org" }
+    tags  = { Owner = "alt@example.org" }
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_storage_account.this.tags), "Owner")
+    error_message = "owner ersetzt einen Tag Owner aus tags, gleich wie geschrieben."
   }
 
   assert {
@@ -143,6 +148,19 @@ run "ohne_owner_kein_tag" {
   assert {
     condition     = !contains(keys(azurerm_storage_account.this.tags), "owner")
     error_message = "Ohne owner kein Tag owner."
+  }
+}
+
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = !contains(keys(azurerm_storage_account.this.tags), "owner")
+    error_message = "Ein leerer owner wirkt wie null: kein Tag."
   }
 }
 

@@ -31,18 +31,18 @@ Jedes Projekt hat eine Ansprechperson oder ein Team, im Template `owner` in `pro
 ```hcl
 module "core" {
   # ...
-  owner = local.cfg.owner # z. B. team@example.org
+  owner = try(local.cfg.owner, null) # z. B. team@example.org; "" wie null
 }
 ```
 
 | Modul | Wirkung |
 | --- | --- |
-| `core`, `keyvault`, `storage`, `monitoring` | Tag `owner` an jeder Ressource, die Tags kennt. Er geht einem Tag `owner` aus `tags` vor. |
+| `core`, `keyvault`, `storage`, `monitoring` | Tag `owner` an jeder Ressource, die Tags kennt. Er ersetzt einen Tag `owner` aus `tags`, gleich wie geschrieben (`Owner`, `OWNER`): Azure unterscheidet bei Tag-Namen keine Groß- und Kleinschreibung. |
 | `monitoring` | Zusätzlicher Empfänger `owner` in der Aktionsgruppe, also für alle Alarme und Budget-Warnungen. Steht die Adresse schon in `alert_emails`, auch anders geschrieben, kommt keine zweite Mail. |
 | `sso` | App-Registrierungen kennen keine Azure-Tags. Das Modul schreibt `owner: <adresse>` als Notiz (`notes`) an jede Registrierung und jeden Service Principal, den es anlegt. Besitzerin im Sinne von Entra bleibt die Pipeline-Identität. |
-| `ado-project` | `owner` in der erzeugten `project.yaml`, sonst ein auskommentiertes Beispiel. |
+| `ado-project` | `owner` in der erzeugten `project.yaml`; ohne Angabe `owner: ""` mit `TODO(onboarding)`, wie im Template. |
 
-Die Module prüfen das Format einer E-Mail-Adresse. Ohne `owner` (Default `null`) ändert sich nichts.
+Die Module prüfen das Format einer E-Mail-Adresse. Leerer Text gilt wie `null`: Das Template liefert `owner: ""` aus, bis jemand eine Adresse einträgt, und kann den Wert unverändert übergeben. Fehlt der Schlüssel ganz, fängt das der Aufrufer ab, etwa mit `try(local.cfg.owner, null)`. Ohne `owner` (Default `null`) oder mit leerem Text ändert sich nichts.
 
 Umstieg: Kommt `owner` dazu, ändert der nächste Apply die Tags an Ort und Stelle; nichts wird ersetzt. Die Pipeline verlangt dafür einmal die Infrastruktur-Freigabe. Die Function App schreibt Terraform dabei mit ihrer ganzen Konfiguration neu (`azapi`), wie bei jeder Änderung der App-Settings; sie kann dabei neu starten. Azure schickt der Adresse einmal eine Mail, dass sie der Aktionsgruppe hinzugefügt wurde.
 
@@ -350,7 +350,7 @@ Aktionsgruppe, Alarme und Budget je Umgebung, nur wenn es Empfänger gibt. Detai
 ```hcl
 module "monitoring" {
   source = "git::https://github.com/blackforestsentinel/seed-terraform.git//monitoring?ref=<version>"
-  count  = length(local.alert_emails) > 0 || local.owner != null ? 1 : 0
+  count  = length(local.alert_emails) > 0 || (local.owner != null && local.owner != "") ? 1 : 0
 
   name                       = local.cfg.project
   environment                = var.environment

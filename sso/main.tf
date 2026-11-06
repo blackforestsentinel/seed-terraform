@@ -9,8 +9,8 @@ locals {
 
   # Ansprechpartner für Admins in Entra, die eine Registrierung keinem Projekt zuordnen können.
   # Besitzer im Sinne von Entra (owners) bleibt die Pipeline: Eine E-Mail-Adresse ließe sich nur mit
-  # Leserechten auf Benutzer in eine Object-ID auflösen. null lässt die Notiz unverändert leer.
-  notes = var.owner == null ? null : "owner: ${var.owner}"
+  # Leserechten auf Benutzer in eine Object-ID auflösen. null oder leer lässt die Notiz leer.
+  notes = var.owner == null || var.owner == "" ? null : "owner: ${var.owner}"
 
   # Entra ID verlangt bei URIs ohne Pfad einen abschließenden Schrägstrich
   # (https://app.example.org/); MSAL meldet sich mit genau dieser Form an.

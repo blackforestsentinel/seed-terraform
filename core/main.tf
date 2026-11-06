@@ -14,15 +14,20 @@ locals {
   static_web_app = var.static_web_app_sku != "None"
   custom_domains = toset(var.custom_domains)
 
+  # Leerer Text gilt wie null: Das Template liefert owner: "" aus, bis jemand eine Adresse einträgt.
+  owner = var.owner == "" ? null : var.owner
+
   tags = merge(
     {
       "seed:project"     = var.name
       "seed:environment" = var.environment
       "seed:module"      = "core"
     },
-    var.tags,
+    # Mit owner fällt ein Tag owner aus tags weg, gleich wie geschrieben: merge() unterscheidet
+    # Owner und owner, Azure nicht.
+    { for k, v in var.tags : k => v if local.owner == null || lower(k) != "owner" },
     # Ohne owner kein Tag, bestehende Ressourcen bleiben dann unverändert.
-    var.owner == null ? {} : { owner = var.owner },
+    local.owner == null ? {} : { owner = local.owner },
   )
 }
 

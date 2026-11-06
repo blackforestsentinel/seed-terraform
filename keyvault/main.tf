@@ -27,15 +27,20 @@ locals {
     for s in var.secrets : s => "@Microsoft.KeyVault(VaultName=${local.key_vault_name};SecretName=${s})"
   }
 
+  # Leerer Text gilt wie null: Das Template liefert owner: "" aus, bis jemand eine Adresse einträgt.
+  owner = var.owner == "" ? null : var.owner
+
   tags = merge(
     {
       "seed:project"     = var.name
       "seed:environment" = var.environment
       "seed:module"      = "keyvault"
     },
-    var.tags,
+    # Mit owner fällt ein Tag owner aus tags weg, gleich wie geschrieben: merge() unterscheidet
+    # Owner und owner, Azure nicht.
+    { for k, v in var.tags : k => v if local.owner == null || lower(k) != "owner" },
     # Ohne owner kein Tag, der Vault bleibt dann unverändert.
-    var.owner == null ? {} : { owner = var.owner },
+    local.owner == null ? {} : { owner = local.owner },
   )
 }
 

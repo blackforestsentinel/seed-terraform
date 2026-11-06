@@ -750,6 +750,19 @@ run "owner_als_notiz" {
   }
 }
 
+run "owner_leer_wie_null" {
+  command = plan
+
+  variables {
+    owner = ""
+  }
+
+  assert {
+    condition     = azuread_application.api[0].notes == null && azuread_service_principal.api[0].notes == null
+    error_message = "Ein leerer owner wirkt wie null: keine Notiz."
+  }
+}
+
 run "owner_nur_als_mail" {
   command = plan
 
