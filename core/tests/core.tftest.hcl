@@ -162,3 +162,13 @@ run "cors_einzelne_origins" {
     error_message = "CORS ohne Credentials."
   }
 }
+
+run "cors_origin_null_abgelehnt" {
+  command = plan
+
+  variables {
+    cors_allowed_origins = ["https://www.example.org", "null"]
+  }
+
+  expect_failures = [var.cors_allowed_origins]
+}

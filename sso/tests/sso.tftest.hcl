@@ -23,7 +23,7 @@ variables {
   spa_redirect_uris = ["https://app.example.org", "http://localhost:5173"]
 }
 
-run "ohne_neue_einstellungen_wie_bisher" {
+run "standard_ohne_optionen" {
   # Im Mock haben alle Registrierungen dieselbe Client-ID; Auth__AllowedClientIds__0 ist die der SPA.
   assert {
     condition = output.app_settings == {
@@ -526,7 +526,7 @@ run "connector_an" {
   }
 
   assert {
-    condition = output.app_settings == merge(run.ohne_neue_einstellungen_wie_bisher.app_settings, {
+    condition = output.app_settings == merge(run.standard_ohne_optionen.app_settings, {
       Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
     })
     error_message = "connector ergänzt die App-Settings nur um seine Client-ID als zugelassenen Client, nach der SPA."
@@ -687,7 +687,7 @@ run "zugelassene_clients_reihenfolge" {
   assert {
     condition = (
       { for k, v in output.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") } ==
-      { for k, v in run.ohne_neue_einstellungen_wie_bisher.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") }
+      { for k, v in run.standard_ohne_optionen.app_settings : k => v if !startswith(k, "Auth__AllowedClientIds__") }
     )
     error_message = "Die übrigen App-Settings bleiben mit connector und mcp ohne eigene Domain unverändert."
   }

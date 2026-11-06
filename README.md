@@ -71,7 +71,7 @@ Konvention: Das Modul setzt die App-Settings `Seed__Project` und `Seed__Environm
 
 Key-Vault-Referenzen (`@Microsoft.KeyVault(...)`) in `app_settings` löst die Plattform mit der UAMI der Function auf (`keyVaultReferenceIdentity`); die Leserechte vergibt das Modul [`keyvault`](keyvault/README.md). Ab dieser Version zeigt der erste Plan nach dem Update dafür einmal eine Änderung an der Function App.
 
-CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu, ohne Credentials. Ab v0.17.0 lehnt das Modul ein `*` in `cors_allowed_origins` ab, auch als Platzhalter wie `https://*.example.org`: Jede Website, bzw. jede Subdomain, dürfte die API sonst aus dem Browser aufrufen und die Antworten lesen. Origins einzeln angeben. Das Template lässt schon bisher nur einzelne Origins zu.
+CORS: Die Function lässt die Standard-URL der Static Web App, alle eigenen Domains und `cors_allowed_origins` zu, ohne Credentials. Ab v0.17.0 lehnt das Modul ein `*` in `cors_allowed_origins` ab, auch als Platzhalter wie `https://*.example.org`: Jede Website, bzw. jede Subdomain, dürfte die API sonst aus dem Browser aufrufen und die Antworten lesen. Ebenso den Origin `null`, den Browser für Sandbox-iframes, `data:`- und `file:`-Seiten senden und den damit jede Website erzeugen kann. Origins einzeln angeben. Das Template lässt schon bisher nur einzelne Origins zu.
 
 #### Telemetrie ohne Schlüssel
 
@@ -179,7 +179,7 @@ Personen und Gruppen weist ein Admin in Entra zu (Enterprise App `<projekt>-<umg
 
 `assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Ohne `app_roles` weist der Admin der Standardrolle („Standardzugriff“) zu. Mit `false` kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities; eine Function ohne `[RequireCapability]` stünde ihm offen.
 
-Default ist ab v0.17.0 `true` (bis v0.16.0 `false`); `null` gilt als Default. Umstieg: Wer das Modul ohne `assignment_required` einbindet, sieht im nächsten Plan eine Änderung am Service Principal der API an Ort und Stelle. Danach bekommt nur noch ein Token, wer eine Rolle hat; vor dem Update also Personen und Gruppen in Entra zuweisen oder `assignment_required = false` setzen. Das Template übergibt den Wert aus `auth.assignmentRequired` in `project.yaml` ausdrücklich; für seine Projekte ändert sich dadurch nichts.
+Default ist ab v0.17.0 `true` (bis v0.16.0 `false`); `null` gilt als Default. Umstieg: Wer das Modul ohne `assignment_required` einbindet, sieht im nächsten Plan eine Änderung am Service Principal der API an Ort und Stelle. Danach bekommt nur noch ein Token, wer eine Rolle hat; vor dem Update also Personen und Gruppen in Entra zuweisen oder `assignment_required = false` setzen. Das Template übergibt den Wert aus `auth.assignmentRequired` in `project.yaml` ausdrücklich, mit `false` als Rückfallwert: Projekte, deren `project.yaml` den Schlüssel nicht hat, behalten `false`, und neue Projekte haben `assignmentRequired: true` ausdrücklich in `project.yaml`. Für bestehende Template-Projekte ändert sich durch den neuen Default also nichts.
 
 #### Bridge-Seite für die stille Anmeldung
 

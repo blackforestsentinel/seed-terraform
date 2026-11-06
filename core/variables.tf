@@ -88,7 +88,7 @@ variable "app_settings" {
 }
 
 variable "cors_allowed_origins" {
-  description = "Zusätzliche CORS-Origins, einzeln, z. B. https://www.example.org. Die URL der Static Web App und die eigenen Domains sind immer freigegeben. Ein * lehnt das Modul ab."
+  description = "Zusätzliche CORS-Origins, einzeln, z. B. https://www.example.org. Die URL der Static Web App und die eigenen Domains sind immer freigegeben. Ein * und den Origin null lehnt das Modul ab."
   type        = list(string)
   default     = []
   nullable    = false
@@ -99,6 +99,13 @@ variable "cors_allowed_origins" {
   validation {
     condition     = alltrue([for origin in var.cors_allowed_origins : !strcontains(origin, "*")])
     error_message = "cors_allowed_origins: kein *, sonst dürfte jede Website die API aus dem Browser aufrufen. Origins einzeln angeben, z. B. https://www.example.org."
+  }
+
+  # Den Origin null senden Browser für Sandbox-iframes, data:- und file:-Seiten; jede Website kann
+  # ihn mit einem solchen iframe erzeugen.
+  validation {
+    condition     = alltrue([for origin in var.cors_allowed_origins : lower(trimspace(origin)) != "null"])
+    error_message = "cors_allowed_origins: kein Origin null, den kann jede Website über ein Sandbox-iframe senden."
   }
 }
 
