@@ -22,7 +22,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs, Ablauf von Secrets im Key Vault) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, URI des Vaults als `Seed__KeyVaultUri`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
-| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer, eingeschränkte Rechte am Repo (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
 
 ### Besitzer (`owner`)
 
@@ -120,7 +120,7 @@ Ab v0.5.0 legt das Modul die Static Web App per `count` an. Bestehende States ve
 
 Legt zwei App-Registrierungen an (Single Tenant): die API mit der delegierten Berechtigung `access_as_user` und Application ID URI `api://<client-id>`, und die SPA mit den Redirect-URIs des Frontends. Die SPA ist an der API vorab autorisiert, Nutzerinnen und Nutzer sehen also keinen Einwilligungsdialog für die API. Zustimmen dürfen für `access_as_user` nur Admins (Typ Admin): Die eigenen Clients, SPA und Custom Connector, sind vorab autorisiert; eine fremde App bekommt die Berechtigung also nicht über die Einwilligung einer einzelnen Person, gleich wie die Einwilligungseinstellungen des Tenants stehen. Bis v0.10.0 war die Berechtigung vom Typ User.
 
-Eigene Domains gehören als `https://<domain>` mit in `spa_redirect_uris`. Ohne Redirect-URIs (Projekt ohne Frontend, `spa_redirect_uris` weglassen oder leer) entsteht nur die API-Registrierung: keine SPA, kein Service Principal dafür, keine Vorab-Autorisierung. Ab v0.5.0 liegen die SPA-Ressourcen deshalb unter `[0]`; `moved`-Blöcke verschieben bestehende States ohne Änderung an den Registrierungen. Ab v0.6.0 liegen auch die API-Ressourcen unter `[0]`, weil eine vorhandene Registrierung an ihre Stelle treten kann; `moved`-Blöcke verschieben bestehende States, der Plan verschiebt dann nur.
+Eigene Domains gehören als `https://<domain>` mit in `spa_redirect_uris`. `http://` erlaubt das Modul nur für `localhost` und `127.0.0.1`, optional mit Port, danach `/` oder Ende, in `spa_redirect_uris` wie in `mcp_redirect_uris`; ab v0.18.0 lehnt es Hosts wie `http://localhost.example.org` ab, die bisher durchgingen. Ohne Redirect-URIs (Projekt ohne Frontend, `spa_redirect_uris` weglassen oder leer) entsteht nur die API-Registrierung: keine SPA, kein Service Principal dafür, keine Vorab-Autorisierung. Ab v0.5.0 liegen die SPA-Ressourcen deshalb unter `[0]`; `moved`-Blöcke verschieben bestehende States ohne Änderung an den Registrierungen. Ab v0.6.0 liegen auch die API-Ressourcen unter `[0]`, weil eine vorhandene Registrierung an ihre Stelle treten kann; `moved`-Blöcke verschieben bestehende States, der Plan verschiebt dann nur.
 
 ```hcl
 module "sso" {
@@ -151,12 +151,14 @@ Das Modul trägt jeden Client ein, den es selbst anlegt oder an der API vorautor
 1. die SPA-Registrierung (mit Frontend oder `spa_extra_redirect_uris`),
 2. die Client-Registrierung des Custom Connectors (`connector`),
 3. die Client-Registrierung für MCP-Clients (`mcp`),
-4. mit `mcp` die Clients aus `mcp_preauthorized_client_ids` (Standard: VS Code), sortiert, ohne Doppelte und klein geschrieben,
+4. mit `mcp` die Clients aus `mcp_preauthorized_client_ids` (Standard leer, bis v0.17.0 VS Code), sortiert, ohne Doppelte und klein geschrieben,
 5. die Clients aus `additional_allowed_client_ids`, ebenso sortiert.
+
+Mit `existing_registration` treten an die Stelle der eigenen Registrierungen die Client-IDs aus `existing_registration`, in derselben Reihenfolge und je nach Schalter: `spa_client_id` (mit Frontend), `connector_client_id` (mit `connector`), `mcp_client_id` und `mcp_preauthorized_client_ids` (mit `mcp`), danach `additional_allowed_client_ids`; klein geschrieben, ohne Doppelte.
 
 Die eigenen Registrierungen stehen vorn, statt einsortiert zu werden: Ihre Client-IDs entstehen erst beim Apply, eine ganz sortierte Liste wäre im Plan unbekannt und mit ihr alle App-Settings der Function. Kommt ein Client dazu oder fällt einer weg, verschieben sich die Nummern der folgenden Einträge; der Plan zeigt das als Änderung der App-Settings.
 
-Mit `existing_registration` und ohne jeden dieser Clients (nur API) setzt das Modul nur die Einträge aus `additional_allowed_client_ids`; ohne sie nimmt die API wie bisher Tokens jedes Clients an. Weitere Clients mit delegierten Tokens, etwa eine andere App mit Administratorzustimmung für `access_as_user` oder ein Dienst im On-Behalf-Of-Flow, kennt das Modul nicht: Sie gehören in `additional_allowed_client_ids` (im Template `auth.additionalClientIds` in `project.yaml`), sonst lehnt die API sie ab, sobald `Bfs.Seed.Auth` die Liste prüft. Solche Projekte vor dem Update prüfen. Tokens einer Anwendung ohne angemeldete Person (App-Rollen mit `Application`) betrifft die Liste nicht.
+Ohne jeden Eintrag (nur API, keine weiteren Clients) prüft die API den Client nicht. Bis v0.17.0 setzte das Modul mit `existing_registration` nur die Einträge aus `additional_allowed_client_ids`: Ohne sie prüfte die API den Client gar nicht, mit ihnen lehnte sie die eigene SPA ab. Ab v0.18.0 steht die SPA aus `existing_registration` immer vorn; der erste Plan danach zeigt die neuen bzw. verschobenen App-Settings an der Function. Weitere Clients mit delegierten Tokens, etwa eine andere App mit Administratorzustimmung für `access_as_user` oder ein Dienst im On-Behalf-Of-Flow, kennt das Modul nicht: Sie gehören in `additional_allowed_client_ids` (im Template `auth.additionalClientIds` in `project.yaml`), sonst lehnt die API sie ab, sobald `Bfs.Seed.Auth` die Liste prüft. Solche Projekte vor dem Update prüfen. Tokens einer Anwendung ohne angemeldete Person (App-Rollen mit `Application`) betrifft die Liste nicht.
 
 Umstieg: Der erste Plan nach dem Update zeigt an der Function App die neuen App-Settings, eine Änderung an Ort und Stelle; die Function startet danach neu. Versionen von `Bfs.Seed.Auth` ohne `AllowedClientIds` ignorieren die Einträge.
 
@@ -177,7 +179,7 @@ module "sso" {
 
 Personen und Gruppen weist ein Admin in Entra zu (Enterprise App `<projekt>-<umgebung>-api`, „Benutzer und Gruppen“). Die Pipeline kann das nicht: Zuweisungen über Graph verlangen `AppRoleAssignment.ReadWrite.All`, `Application.ReadWrite.OwnedBy` reicht dafür nicht. Gruppen werden nicht verschachtelt aufgelöst; zugewiesen wird die Gruppe, in der die Personen direkt Mitglied sind.
 
-`assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Ohne `app_roles` weist der Admin der Standardrolle („Standardzugriff“) zu. Mit `false` kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities; eine Function ohne `[RequireCapability]` stünde ihm offen.
+`assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der API: Ein Token für die API bekommen dann nur Personen, Gruppen und Anwendungen mit einer Rolle; alle anderen scheitern schon bei der Anmeldung (AADSTS50105). Ohne `app_roles` weist der Admin der Standardrolle („Standardzugriff“) zu. Mit `false` kann sich jedes Konto des Tenants anmelden und bekommt ohne Rolle nur keine Capabilities; eine Function ohne `[RequireCapability]` stünde ihm offen. Für die SPA gibt es `spa_assignment_required`, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
 
 Default ist ab v0.17.0 `true` (bis v0.16.0 `false`); `null` gilt als Default. Umstieg: Wer das Modul ohne `assignment_required` einbindet, sieht im nächsten Plan eine Änderung am Service Principal der API an Ort und Stelle. Danach bekommt nur noch ein Token, wer eine Rolle hat; vor dem Update also Personen und Gruppen in Entra zuweisen oder `assignment_required = false` setzen. Das Template übergibt den Wert aus `auth.assignmentRequired` in `project.yaml` ausdrücklich, mit `false` als Rückfallwert: Projekte, deren `project.yaml` den Schlüssel nicht hat, behalten `false`, und neue Projekte haben `assignmentRequired: true` ausdrücklich in `project.yaml`. Für bestehende Template-Projekte ändert sich durch den neuen Default also nichts.
 
@@ -209,20 +211,28 @@ module "sso" {
     spa_client_id = "<client-id der SPA>"       # weglassen ohne Frontend
     api_scope     = "api://<client-id der API>/access_as_user"
     audience      = "api://<client-id der API>" # optional, Default: api_scope ohne den letzten Teil
+
+    # optional, je nach Schalter
+    connector_client_id          = "<client-id des Connector-Clients>" # mit connector
+    mcp_client_id                = "<client-id des MCP-Clients>"       # mit mcp Pflicht
+    mcp_preauthorized_client_ids = []                                  # mit mcp, weitere vorautorisierte Clients
   }
 }
 ```
 
-Dann legt das Modul nichts an und braucht keine Graph-Rechte im fremden Tenant. Es reicht Tenant, Client-IDs und Berechtigung als `app_settings` und `frontend_config` weiter; die API prüft Tokens gegen den angegebenen Tenant, das Frontend meldet sich dort an. Heißt die Berechtigung nicht `access_as_user`, setzt es `Auth__RequiredScope`. Zugelassene Clients setzt es nur aus `additional_allowed_client_ids`, die Registrierungen gehören dem anderen Tenant; ohne sie prüft die API den Client nicht. v1- und v2-Tokens akzeptiert `Bfs.Seed.Auth` beide. War die Registrierung bisher angelegt, entfernt der nächste Apply die eigenen Registrierungen.
+Dann legt das Modul nichts an und braucht keine Graph-Rechte im fremden Tenant. Es reicht Tenant, Client-IDs und Berechtigung als `app_settings` und `frontend_config` weiter; die API prüft Tokens gegen den angegebenen Tenant, das Frontend meldet sich dort an. Heißt die Berechtigung nicht `access_as_user`, setzt es `Auth__RequiredScope`. v1- und v2-Tokens akzeptiert `Bfs.Seed.Auth` beide. War die Registrierung bisher angelegt, entfernt der nächste Apply die eigenen Registrierungen.
+
+**Zugelassene Clients:** Die Client-IDs aus `existing_registration` kommen wie die eigenen Registrierungen in die [zugelassenen Clients](#zugelassene-clients): `spa_client_id` mit Frontend, `connector_client_id` mit `connector`, `mcp_client_id` und `mcp_preauthorized_client_ids` mit `mcp`, danach `additional_allowed_client_ids`. In `existing_registration` gehört also jeder Client aus dem anderen Tenant, der die API im Namen von Personen aufruft; ein fehlender wird abgelehnt, sobald die Liste einen Eintrag hat. Alle IDs müssen GUIDs sein, auch `tenant_id`. Bis v0.17.0 setzte das Modul hier nur `additional_allowed_client_ids` (siehe oben); ab v0.18.0 ist die SPA immer dabei.
 
 Was der Admin im anderen Tenant einrichtet:
 
-1. **SPA-Registrierung** (Plattform „Single-Page-Anwendung“) mit den Redirect-URIs aus der Ausgabe `spa_redirect_uris`: URL der Static Web App mit abschließendem Schrägstrich, eigene Domains, mit Bridge-Seite zusätzlich `<origin>/redirect.html` je Origin, in `dev` `http://localhost:5173/`, dazu `spa_extra_redirect_uris`. Die URL der Static Web App steht erst nach dem ersten Apply fest.
-2. **API-Registrierung** mit Application ID URI (`audience`) und einer delegierten Berechtigung (`api_scope`).
-3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen. Alternativ erteilt der Admin die Einwilligung für die SPA.
-4. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
-5. **Zuweisungen** von Personen und Gruppen zu den Rollen und „Zuweisung erforderlich“ an der Enterprise App der API. Das Modul setzt es bei eigenen Registrierungen als Standard; eine vorhandene erreicht es nicht.
-6. **Mit `directory`:** die Graph-Berechtigungen an der SPA-Registrierung und die Zustimmung, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
+1. **SPA-Registrierung** (Plattform „Single-Page-Anwendung“) mit den Redirect-URIs aus der Ausgabe `spa_redirect_uris`: URL der Static Web App mit abschließendem Schrägstrich, eigene Domains, mit Bridge-Seite zusätzlich `<origin>/redirect.html` je Origin, in `dev` `http://localhost:5173/`, dazu `spa_extra_redirect_uris`. Die URL der Static Web App steht erst nach dem ersten Apply fest. Ihre Client-ID gehört als `spa_client_id` in `existing_registration`.
+2. **API-Registrierung** mit Application ID URI (`audience`) und einer delegierten Berechtigung (`api_scope`). Unter „Eine API verfügbar machen“ muss bei der Berechtigung „Wer kann zustimmen?“ auf **„Nur Administratoren“** stehen (Typ Admin), wie bei Registrierungen, die das Modul anlegt. Der Standard im Portal ist „Administratoren und Benutzer“: Dann bekäme eine fremde App über die Einwilligung einer einzelnen Person Tokens für die API in deren Namen.
+3. **Vorautorisierung:** die SPA unter „Eine API verfügbar machen“ als autorisierte Clientanwendung für die Berechtigung eintragen, ebenso den Client des Custom Connectors, falls es einen gibt. Mit Admin-Zustimmung (Schritt 2) ginge sonst jede Anmeldung erst über die Administratorzustimmung für die SPA.
+4. **Mit `mcp`:** einen zweiten Scope `mcp_access` an der API und eine öffentliche Client-Registrierung für MCP-Clients wie in [MCP](#mcp) beschrieben (Mobile und Desktop, Redirect-URIs aus `mcp_redirect_uris`, ohne „Öffentliche Clientflows zulassen“), für `mcp_access` vorautorisiert, nie für `access_as_user`. Ihre Client-ID gehört als `mcp_client_id` in `existing_registration`, sonst bricht der Plan ab. Weitere vorautorisierte Clients (etwa VS Code) in `mcp_preauthorized_client_ids`.
+5. **App-Rollen** an der API-Registrierung gemäß `auth.roles` bzw. Ausgabe `app_roles`: Wert gleich Rollenname, zulässige Mitgliedstypen wie angegeben. Die IDs dürfen abweichen, entscheidend ist der Wert.
+6. **Zuweisungen** von Personen und Gruppen zu den Rollen und „Zuweisung erforderlich“ an der Enterprise App der API. Das Modul setzt es bei eigenen Registrierungen als Standard; eine vorhandene erreicht es nicht. Mit `directory.role_filter` oder `directory.service_principals` zusätzlich „Zuweisung erforderlich“ an der Enterprise App der SPA und dieselben Gruppen dort zuweisen (`spa_assignment_required` wirkt bei einer vorhandenen Registrierung nicht).
+7. **Mit `directory`:** die Graph-Berechtigungen an der SPA-Registrierung und die Zustimmung, siehe [Personen und Profilbilder](#personen-und-profilbilder-microsoft-graph).
 
 #### Personen und Profilbilder (Microsoft Graph)
 
@@ -261,7 +271,17 @@ Das Modul trägt an der SPA-Registrierung `<name>-<umgebung>-web` delegierte Ber
 | `role_filter` | `GroupMember.Read.All` | `bc024368-1153-4739-b217-4326f2e966d0` | Mitglieder zugewiesener Gruppen | Admin |
 | `service_principals` | `Application.Read.All` | `c79f8feb-a9db-4090-85f9-90d820caa0eb` | Anwendungen und verwaltete Identitäten suchen (`/servicePrincipals`) und anzeigen | Admin |
 
-Die IDs sind in allen Tenants gleich; das Modul nutzt sie fest wie bei `offline_access` in `mcp.tf`, weil die Pipeline mit `Application.ReadWrite.OwnedBy` den Service Principal von Graph nicht zwingend lesen darf. Delegiert heißt: Das Frontend sieht nur, was die angemeldete Person auch in Outlook und Teams sieht, und die Einstellungen des Tenants (etwa ausgeblendete Fotos) gelten weiter.
+Die IDs sind in allen Tenants gleich; das Modul nutzt sie fest wie bei `offline_access` in `mcp.tf`, weil die Pipeline mit `Application.ReadWrite.OwnedBy` den Service Principal von Graph nicht zwingend lesen darf. Delegiert heißt: Mit `enabled` und `presence` sieht das Frontend nur, was die angemeldete Person auch in Outlook und Teams sieht, und die Einstellungen des Tenants (etwa ausgeblendete Fotos) gelten weiter.
+
+**`role_filter` und `service_principals` gelten tenantweit.** Sie geben der SPA, einem öffentlichen Client ohne Secret, die delegierten Berechtigungen `Application.Read.All` und `GroupMember.Read.All` für den ganzen Tenant, nicht nur für den Picker. Nach der Administratorzustimmung kann jede Person, die ein Token für die SPA-Client-ID bekommt, Microsoft Graph damit direkt aufrufen und alle App-Registrierungen und Service Principals (mit Redirect-URIs, App-Rollen und Metadaten der Anmeldeinformationen), alle Rollenzuweisungen und alle Gruppenmitgliedschaften aufzählen; auch ein Skriptfehler im Frontend (XSS) erreicht all das. Beide Optionen nur einschalten, wenn der Picker sie wirklich braucht, und die Zustimmung bewusst erteilen.
+
+Die Zuweisungspflicht am Service Principal der API (`assignment_required`) greift nur für Tokens der API: Ein Token für Graph fordert die SPA bei Entra direkt an, begrenzt wird es nur durch „Zuweisung erforderlich“ an der Enterprise App der SPA (`<name>-<umgebung>-web`). Ab v0.18.0 gilt deshalb:
+
+- `role_filter` und `service_principals` verlangen `assignment_required = true`, sonst bricht der Plan ab.
+- `spa_assignment_required` setzt „Zuweisung erforderlich“ am Service Principal der SPA. Default `null`: an mit `role_filter` oder `service_principals` (bei `enabled`), sonst aus. `true` schaltet es auch ohne sie ein; `false` zusammen mit `role_filter` oder `service_principals` lehnt das Modul ab.
+- Ist es an, meldet sich an der SPA nur an, wer ihr zugewiesen ist: Personen oder Gruppen unter Enterprise App `<name>-<umgebung>-web` → „Benutzer und Gruppen“ → Rolle „Standardzugriff“ (Default Access). Alle anderen scheitern mit AADSTS50105, auch wenn sie eine Rolle an der API haben. Am einfachsten dieselbe Gruppe den App-Rollen der API und der SPA zuweisen. Die Pipeline kann das nicht (`AppRoleAssignment.ReadWrite.All`).
+
+Umstieg: Wer `role_filter` oder `service_principals` schon nutzt, sieht im nächsten Plan eine Änderung am Service Principal der SPA an Ort und Stelle. Vor dem Update die Gruppen der SPA zuweisen, sonst kommt niemand mehr ins Frontend. Projekte mit `assignment_required = false` und einer der beiden Optionen bricht der Plan ab, bis sie die Zuweisungspflicht einschalten oder die Option abschalten.
 
 **Zustimmung, von Hand:** Das Modul erteilt keine Einwilligung; die Pipeline-Identität könnte das nur mit `DelegatedPermissionGrant.ReadWrite.All`. Nach dem Apply gibt es zwei Wege:
 
@@ -293,6 +313,28 @@ Für ein zentrales Scaffold, das Seed-Projekte in anderen Azure-DevOps-Projekten
 
 Bis v0.13.0 legte das Modul das Repo immer an; ein `moved`-Block übernimmt es in bestehenden States.
 
+#### Rechte am Repo (`protect_repository`)
+
+Ab v0.18.0 setzt das Modul am Repo des Projekts (`azuredevops_git_permissions`) Deny für die Gruppe Contributors des Projekts und für `<Projekt> Build Service (<Organisation>)`, das Job-Token der Pipelines im Projekt:
+
+| Recht | Name im Provider | Warum |
+| --- | --- | --- |
+| Create tag | `CreateTag` | Ein Tag `v…` im Projekt-Repo passte zur Branch-Prüfung der Service Connection und käme ohne Review und ohne Freigabe an die Deployment-Identität. |
+| Force push | `ForcePush` | Verlauf umschreiben, Branches und Tags löschen. |
+| Bypass policies when pushing | `PolicyExempt` | Direkter Push auf `main` an PR-Validierung und Reviewern vorbei. |
+| Bypass policies when completing pull requests | `PullRequestBypassPolicy` | Merge ohne Review. |
+| Edit policies | `EditPolicies` | Reviewer-Pflicht und PR-Validierung abschalten. |
+
+Die übrigen Einträge am Repo bleiben (`replace = false`); Project Administrators betrifft die Einschränkung nicht, es sei denn, sie sind zugleich Contributors: Ein Deny gilt dann auch für sie. Wer einen Branch anlegt, bekommt von Azure DevOps an diesem eigene Rechte, etwa Force push; das bleibt für eigene PR-Branches möglich. Das Modul legt die Rechte erst nach Dateien und Policies an. `protect_repository = false` lässt die Projekt-Defaults stehen, wie bis v0.17.0. Ein Projekt, dessen Pipelines nicht auf das eigene Projekt beschränkt sind („Limit job authorization scope to current project“ aus), läuft als `Project Collection Build Service (<Organisation>)`; diese Identität erfasst das Modul nicht, die Onboarding-Skripte aus seed-pipelines verbieten ihr Create tag.
+
+Die anlegende Identität braucht dafür am Repo „Manage permissions“, und sie muss Gruppen und Identitäten lesen dürfen. Beim PAT von `seed-scaffold` heißt das zusätzlich die Scopes Security (Manage) und Identity (Read), neben Graph (Read) für die Gruppe. Das Job-Token des zentralen Scaffolds hat „Manage permissions“ nicht; dort `protect_repository = false` setzen und die Rechte projektweit über `Grant-SeedScaffoldAccess.ps1` vergeben, oder der Gruppe des Scaffolds das Recht bewusst geben.
+
+**Branch-Prüfung der Service Connection:** Branch control an der Deployment-Service-Connection lässt nur `refs/heads/main` zu und, für die eingebundenen Templates von seed-pipelines, `refs/tags/v*`; nie `refs/tags/*` oder `*`. Weil auch `refs/tags/v*` Tags im Projekt-Repo trifft, gehört Create tag dort nur Administratoren.
+
+Umstieg: Der erste Plan nach dem Update zeigt zwei neue Ressourcen `azuredevops_git_permissions.repository`, ohne Änderung an Repo, Pipeline oder Policies.
+
+**Werte in `azure-pipelines.yml`:** Ab v0.18.0 prüft das Modul alle Werte, die es in die erzeugte Pipeline schreibt, damit ein Zeilenumbruch oder `: ` das YAML nicht umschreibt (etwa `confirmDataDeletion: true` setzen oder ein Repo ergänzen): `pipelines_version` ist ein Release-Tag (`vX.Y.Z`), `service_connection`, `github_connection` und `pool` bestehen aus Buchstaben, Ziffern, `.`, `_`, `-` und Leerzeichen, `environments` aus Kleinbuchstaben, Ziffern und `-`, `terraform_state` aus gültigen Namen für Resource Group, Storage Account und Container.
+
 #### MCP
 
 Für den MCP-Server aus `Bfs.Seed.Mcp` (im Template `features.mcp`):
@@ -309,18 +351,32 @@ module "sso" {
 | --- | --- |
 | Scope `mcp_access` an der API | Gilt nur für `/api/mcp`. Ein Token, das ein MCP-Client bekommt, erreicht die übrige API nicht; Web-Tokens mit `access_as_user` erreichen den MCP-Endpunkt nicht. |
 | Registrierung `<name>-<umgebung>-mcp` | Öffentlicher Client (Mobile und Desktop, PKCE, kein Secret) für Clients ohne eigene Entra-Registrierung. Redirect-URIs aus `mcp_redirect_uris`, Standard: Claude (`https://claude.ai/api/mcp/auth_callback`) und Claude Code (`http://localhost/callback`, `http://127.0.0.1/callback`; Entra ignoriert bei Loopback den Port). |
-| Vorautorisierung | Dieser Client und `mcp_preauthorized_client_ids` (Standard: VS Code, `aebc6443-996d-45c2-90f0-388ff96faa56`) bekommen `mcp_access` ohne Einwilligungsdialog, nie `access_as_user`. Beide stehen in den zugelassenen Clients. |
+| Vorautorisierung | Dieser Client und `mcp_preauthorized_client_ids` (Standard leer) bekommen `mcp_access` ohne Einwilligungsdialog, nie `access_as_user`. Beide stehen in den zugelassenen Clients. |
 | Application ID URI `https://<mcp_custom_domain>/api/mcp` | Nur mit `mcp_custom_domain`, dazu das App-Setting `Mcp__Resource`. |
 
-Mit `existing_registration` legt das Modul für MCP nichts an: Scope `mcp_access`, Client-Registrierung und Vorautorisierung richtet der Admin im anderen Tenant von Hand ein. Ein `check` weist im Plan darauf hin.
+Mit `existing_registration` legt das Modul für MCP nichts an: Scope `mcp_access`, Client-Registrierung und Vorautorisierung richtet der Admin im anderen Tenant von Hand ein ([Schritt 4](#vorhandene-app-registrierung-auch-aus-einem-anderen-tenant)). Die Client-ID des MCP-Clients gehört als `mcp_client_id` in `existing_registration`, weitere vorautorisierte Clients als `mcp_preauthorized_client_ids`; beide kommen in die zugelassenen Clients. Ohne `mcp_client_id` bricht der Plan ab (Validierung von `mcp`). Bis v0.17.0 wies nur ein `check` darauf hin, und MCP ging ohne Liste zugelassener Clients live.
 
-**Warum eine eigene Domain für Claude:** Claude sendet die MCP-Adresse als `resource` (RFC 8707). Entra stellt nur dann ein Token aus, wenn diese Adresse eine Application ID URI der API ist, sonst kommt nach der Anmeldung `AADSTS9010010`. HTTPS-URIs nimmt Entra dort nur auf Domains an, die im Tenant verifiziert sind; `*.azurewebsites.net` scheidet aus. Die Domain muss deshalb vor dem Apply im Tenant verifiziert sein, sonst scheitert `azuread_application_identifier_uri.mcp`. DNS-Einträge, Hostname-Bindung und Zertifikat an der Function legt das Modul nicht an; die Schritte stehen in der README von seed-template. VS Code meldet sich mit seiner eigenen Registrierung ohne `resource` an und kommt ohne eigene Domain aus.
+**VS Code nur auf Wunsch:** VS Code meldet sich bei Entra immer mit der Registrierung von Microsoft an (`aebc6443-996d-45c2-90f0-388ff96faa56`), nicht mit `<name>-<umgebung>-mcp`. Bis v0.17.0 war es Standard in `mcp_preauthorized_client_ids`, ab v0.18.0 ist die Liste leer. Wer VS Code braucht, nimmt es auf:
 
-**Nur zugelassene Clients:** `mcp_access` ist ein Scope vom Typ User, den jede App im Tenant mit Einwilligung bekommen kann. Die API nimmt Tokens aber nur von den [zugelassenen Clients](#zugelassene-clients) an, also den eigenen Registrierungen und `mcp_preauthorized_client_ids`; eine fremde App mit Einwilligung kommt damit nicht durch. Der Scope gilt nur für den MCP-Endpunkt, und was jemand dort darf, entscheiden die Capabilities der Werkzeuge. Bis v0.14.0 gab es keine solche Liste; die API nahm jedes Token mit ihrer Audience und `mcp_access` an, gleich von welchem Client.
+```hcl
+module "sso" {
+  # ...
+  mcp                          = true
+  mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"] # VS Code
+}
+```
+
+Ein vorautorisierter öffentlicher Client von Microsoft lässt sich auch im Device-Code-Flow nutzen; `fallback_public_client_enabled = false` gilt nur für die eigene MCP-Registrierung. Ein Angreifer startet den Flow mit der Client-ID von VS Code für `<api>/mcp_access`, schickt der Person den Code, und nach ihrer Anmeldung hat er ein Token und ein Refresh-Token in ihrem Namen, ohne Einwilligungsdialog. Die API nimmt es an, weil VS Code zugelassen ist. Dagegen hilft nur eine Regel für bedingten Zugriff im Tenant, die den Device-Code-Flow blockiert (Conditional Access → Bedingungen → Authentifizierungsflüsse → Gerätecodefluss, Zugriff blockieren), für alle Personen oder mindestens für diese Anwendung. Sie gehört in jeden Tenant, in dem VS Code oder ein anderer öffentlicher Client von Microsoft vorautorisiert ist.
+
+Umstieg: Wer das Modul mit `mcp = true` ohne `mcp_preauthorized_client_ids` einbindet, sieht im nächsten Plan, dass die Vorautorisierung für VS Code entfällt und `Auth__AllowedClientIds__<n>` mit dessen Client-ID verschwindet. Danach lehnt die API Tokens aus VS Code ab, bis es wieder in der Liste steht.
+
+**Warum eine eigene Domain für Claude:** Claude sendet die MCP-Adresse als `resource` (RFC 8707). Entra stellt nur dann ein Token aus, wenn diese Adresse eine Application ID URI der API ist, sonst kommt nach der Anmeldung `AADSTS9010010`. HTTPS-URIs nimmt Entra dort nur auf Domains an, die im Tenant verifiziert sind; `*.azurewebsites.net` scheidet aus. Die Domain muss deshalb vor dem Apply im Tenant verifiziert sein, sonst scheitert `azuread_application_identifier_uri.mcp`. DNS-Einträge, Hostname-Bindung und Zertifikat an der Function legt das Modul nicht an; die Schritte stehen in der README von seed-template. VS Code meldet sich mit seiner eigenen Registrierung ohne `resource` an und kommt ohne eigene Domain aus, sofern es in `mcp_preauthorized_client_ids` steht.
+
+**Nur zugelassene Clients:** `mcp_access` ist ein Scope vom Typ User, den jede App im Tenant mit Einwilligung bekommen kann. Die API nimmt Tokens aber nur von den [zugelassenen Clients](#zugelassene-clients) an, also den eigenen Registrierungen (bzw. denen aus `existing_registration`) und `mcp_preauthorized_client_ids`; eine fremde App mit Einwilligung kommt damit nicht durch. Der Scope gilt nur für den MCP-Endpunkt, und was jemand dort darf, entscheiden die Capabilities der Werkzeuge. Bis v0.14.0 gab es keine solche Liste; die API nahm jedes Token mit ihrer Audience und `mcp_access` an, gleich von welchem Client.
 
 **Einmal je Umgebung von Hand:** An `<name>-<umgebung>-mcp` die Administratorzustimmung erteilen (Entra Admin Center → App-Registrierungen → API-Berechtigungen). Sie deckt `offline_access` ab, also das Refresh-Token; ohne sie sehen Personen einen Einwilligungsdialog oder „Administratorgenehmigung erforderlich“. Die Pipeline-Identität könnte das nur mit `DelegatedPermissionGrant.ReadWrite.All`.
 
-Ausgaben: `mcp_client_id` (in Claude „OAuth Client ID“, in Claude Code `--client-id`), `mcp_resource` (MCP-Adresse auf der eigenen Domain, sonst `null`), `mcp_scope`. Mit `mcp = false` entsteht nichts davon, und bestehende Projekte sehen nach einem Update des Moduls keine Änderung. Abschalten entfernt Registrierung, Vorautorisierungen, URI und Scope; Entra verlangt, dass der Scope vorher deaktiviert wird, das erledigt der Provider.
+Ausgaben: `mcp_client_id` (in Claude „OAuth Client ID“, in Claude Code `--client-id`; bei `existing_registration` deren `mcp_client_id`), `mcp_resource` (MCP-Adresse auf der eigenen Domain, sonst `null`), `mcp_scope`. Mit `mcp = false` entsteht nichts davon, und bestehende Projekte sehen nach einem Update des Moduls keine Änderung. Abschalten entfernt Registrierung, Vorautorisierungen, URI und Scope; Entra verlangt, dass der Scope vorher deaktiviert wird, das erledigt der Provider.
 
 #### Custom Connector
 
@@ -341,7 +397,7 @@ module "sso" {
 
 **Warum Redirect-URI und Federated Credential nicht hier:** Beide enthalten einen Schlüssel, den die Power Platform aus Anzeigename, Publisher-Präfix und einer Endung der Power-Platform-Umgebung bildet. Die Endung steht in keinen Metadaten der Umgebung, erst der angelegte Connector kennt sie.
 
-Mit `existing_registration` legt das Modul keinen Connector-Client an; der Admin richtet ihn im anderen Tenant von Hand ein, ein `check` weist im Plan darauf hin. Ausgabe: `connector_client_id`. Mit `connector = false` entsteht nichts, bestehende Projekte sehen nach einem Update keine Änderung.
+Mit `existing_registration` legt das Modul keinen Connector-Client an; der Admin richtet ihn im anderen Tenant von Hand ein und trägt seine Client-ID als `connector_client_id` in `existing_registration` ein, damit er in den zugelassenen Clients steht. Fehlt sie, weist ein `check` im Plan darauf hin. Ausgabe: `connector_client_id` (bei `existing_registration` `null`, die Pipeline ändert keine fremde Registrierung). Mit `connector = false` entsteht nichts, bestehende Projekte sehen nach einem Update keine Änderung.
 
 ### monitoring
 
