@@ -44,6 +44,12 @@ variable "environments" {
   description = "Umgebungen in Deploy-Reihenfolge."
   type        = list(string)
   default     = ["dev"]
+
+  # Wie alle Werte, die in azure-pipelines.yml landen, ohne Zeichen, die das YAML verändern könnten.
+  validation {
+    condition     = length(var.environments) > 0 && alltrue([for env in var.environments : can(regex("^[a-z0-9][a-z0-9-]{0,19}$", env))])
+    error_message = "environments: mindestens eine Umgebung, jeweils Kleinbuchstaben, Ziffern und Bindestriche, höchstens 20 Zeichen, z. B. dev oder prod."
+  }
 }
 
 variable "approvers" {
@@ -73,11 +79,21 @@ variable "app_approval_environments" {
 variable "service_connection" {
   description = "Name der Azure-Service-Connection (Workload Identity Federation) im Projekt."
   type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", var.service_connection))
+    error_message = "service_connection: Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Leerzeichen, beginnt mit Buchstabe oder Ziffer."
+  }
 }
 
 variable "github_connection" {
   description = "Name der GitHub-Service-Connection, über die die Pipeline-Templates gelesen werden."
   type        = string
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", var.github_connection))
+    error_message = "github_connection: Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Leerzeichen, beginnt mit Buchstabe oder Ziffer."
+  }
 }
 
 variable "terraform_state" {
@@ -87,6 +103,21 @@ variable "terraform_state" {
     storage_account = string
     container       = string
   })
+
+  validation {
+    condition     = can(regex("^[A-Za-z0-9._()-]{1,90}$", var.terraform_state.resource_group))
+    error_message = "terraform_state.resource_group: Name einer Resource Group, höchstens 90 Zeichen aus Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Klammern."
+  }
+
+  validation {
+    condition     = can(regex("^[a-z0-9]{3,24}$", var.terraform_state.storage_account))
+    error_message = "terraform_state.storage_account: Name eines Storage Accounts, 3-24 Kleinbuchstaben und Ziffern."
+  }
+
+  validation {
+    condition     = can(regex("^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$", var.terraform_state.container))
+    error_message = "terraform_state.container: Name eines Blob-Containers, 3-63 Kleinbuchstaben, Ziffern und Bindestriche."
+  }
 }
 
 variable "pr_validation" {
@@ -128,6 +159,11 @@ variable "pool" {
   description = "Agent-Pool der Projekt-Pipeline (Parameter pool von web-app.yml ab seed-pipelines v0.13.0); leer: Microsoft-gehostete Agents."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.pool == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", var.pool))
+    error_message = "pool: leer oder Name eines Agent-Pools aus Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Leerzeichen, beginnt mit Buchstabe oder Ziffer."
+  }
 }
 
 variable "template_url" {
@@ -137,7 +173,19 @@ variable "template_url" {
 }
 
 variable "pipelines_version" {
-  description = "Tag von seed-pipelines, den das Projekt einbindet."
+  description = "Tag von seed-pipelines, den das Projekt einbindet, z. B. v0.17.0."
   type        = string
   default     = "v0.5.0"
+
+  validation {
+    condition     = can(regex("^v\\d+\\.\\d+\\.\\d+$", var.pipelines_version))
+    error_message = "pipelines_version: ein Release-Tag von seed-pipelines, z. B. v0.17.0."
+  }
+}
+
+variable "protect_repository" {
+  description = "Rechte am Repo einschränken: Contributors des Projekts und <Projekt> Build Service bekommen Deny für Create tag, Force push, Bypass policies when pushing, Bypass policies when completing pull requests und Edit policies. Braucht die Berechtigung \"Manage permissions\" am Repo (README). false: Projekt-Defaults, wie bis v0.17.0."
+  type        = bool
+  default     = true
+  nullable    = false
 }

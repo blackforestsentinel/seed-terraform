@@ -42,7 +42,7 @@ locals {
   branch = "refs/heads/main"
 
   # PR-Läufe ohne Deploy kennt web-app.yml erst ab seed-pipelines v0.5.0; mit einer älteren
-  # Version würde die PR-Validierung den PR-Stand deployen. Branches (Tests) gelten als neu.
+  # Version würde die PR-Validierung den PR-Stand deployen.
   pipelines_semver  = try([for part in regex("^v(\\d+)\\.(\\d+)\\.(\\d+)$", var.pipelines_version) : tonumber(part)], null)
   pipelines_number  = local.pipelines_semver == null ? null : local.pipelines_semver[0] * 1000000 + local.pipelines_semver[1] * 1000 + local.pipelines_semver[2]
   pr_runs_supported = local.pipelines_number == null ? true : local.pipelines_number >= 5000
@@ -282,4 +282,71 @@ resource "azuredevops_branch_policy_min_reviewers" "this" {
 
   # Wie die PR-Validierung erst nach den Dateien, die das Modul direkt auf main schreibt.
   depends_on = [azuredevops_git_repository_file.pipeline]
+}
+
+# --- Rechte am Repo -------------------------------------------------------------
+
+# Die Projekt-Defaults erlauben Contributors "Create tag"; je nach Projekt auch mehr. Ein Tag
+# v... im Projekt-Repo passte zur Branch-Prüfung der Service Connection (refs/tags/v* für
+# seed-pipelines) und käme ohne Review an die Deployment-Identität. Force push, Bypass policies
+# und Edit policies hebelten Reviewer-Pflicht und PR-Validierung aus. Deny gilt für die Gruppe
+# Contributors und für das Job-Token der Pipelines des Projekts (<Projekt> Build Service), nicht
+# für Project Administrators. replace = false lässt andere Einträge am Repo stehen.
+data "azuredevops_client_config" "this" {
+  count = var.protect_repository ? 1 : 0
+}
+
+data "azuredevops_group" "contributors" {
+  count = var.protect_repository ? 1 : 0
+
+  project_id = data.azuredevops_project.this.id
+  name       = "Contributors"
+}
+
+# Die Build-Service-Identität ist ein Dienstkonto, kein Benutzer der Organisation. Mit
+# search_filter = "DisplayName" fände der Provider sie nicht: Er vergleicht mit dem
+# Anzeigenamen des Anbieters, und das ist bei ihr die Projekt-ID. "General" nimmt den ersten
+# Treffer; die Postcondition prüft, dass er zum Projekt gehört.
+data "azuredevops_identity_user" "build_service" {
+  count = var.protect_repository ? 1 : 0
+
+  name          = "${data.azuredevops_project.this.name} Build Service (${data.azuredevops_client_config.this[0].name})"
+  search_filter = "General"
+
+  lifecycle {
+    postcondition {
+      condition     = endswith(lower(self.descriptor), lower(":Build:${data.azuredevops_project.this.id}"))
+      error_message = "Die Build-Service-Identität des Projekts wurde nicht eindeutig gefunden; protect_repository = false und die Rechte von Hand setzen (README)."
+    }
+  }
+}
+
+locals {
+  repository_denied_permissions = {
+    for permission in ["CreateTag", "ForcePush", "PolicyExempt", "PullRequestBypassPolicy", "EditPolicies"] : permission => "Deny"
+  }
+
+  # Feste Schlüssel, damit for_each schon im Plan feststeht.
+  repository_principals = var.protect_repository ? {
+    contributors  = data.azuredevops_group.contributors[0].descriptor
+    build_service = data.azuredevops_identity_user.build_service[0].subject_descriptor
+  } : {}
+}
+
+resource "azuredevops_git_permissions" "repository" {
+  for_each = local.repository_principals
+
+  project_id    = data.azuredevops_project.this.id
+  repository_id = local.repository_id
+  principal     = each.value
+  permissions   = local.repository_denied_permissions
+  replace       = false
+
+  # Erst nach Dateien und Policies: Ist die anlegende Identität selbst Contributor, dürfte sie
+  # danach keine Policies mehr anlegen.
+  depends_on = [
+    azuredevops_git_repository_file.pipeline,
+    azuredevops_branch_policy_build_validation.this,
+    azuredevops_branch_policy_min_reviewers.this,
+  ]
 }

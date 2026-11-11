@@ -35,6 +35,15 @@ variable "assignment_required" {
   nullable    = false
 }
 
+# assignment_required gilt nur für Tokens der API. Ein Token für Microsoft Graph fordert die SPA
+# bei Entra direkt an; das begrenzt nur „Zuweisung erforderlich“ an ihrem eigenen Service
+# Principal. Wichtig mit directory.role_filter und directory.service_principals (directory.tf).
+variable "spa_assignment_required" {
+  description = "Zuweisung erforderlich an der SPA (Enterprise App <name>-<umgebung>-web): Anmelden können sich nur Personen und Gruppen, die ihr zugewiesen sind (Standardzugriff). null (Default): an mit directory.role_filter oder directory.service_principals, sonst aus. Ohne Wirkung bei existing_registration."
+  type        = bool
+  default     = null
+}
+
 locals {
   # Stabile IDs je Rolle, wie bei der delegierten Berechtigung; ein neuer Name ist eine neue Rolle.
   app_roles = {

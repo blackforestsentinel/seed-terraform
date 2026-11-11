@@ -154,6 +154,10 @@ resource "azuread_service_principal" "spa" {
   client_id = azuread_application.spa[0].client_id
   owners    = local.owners
   notes     = local.notes
+
+  # Mit true bekommen nur zugewiesene Personen und Gruppen ein Token für die SPA, auch für Graph
+  # (roles.tf, spa_assignment_required).
+  app_role_assignment_required = local.spa_assignment_required
 }
 
 # Das Frontend darf die API ohne Einwilligungsdialog aufrufen.
@@ -170,22 +174,32 @@ resource "azuread_application_pre_authorized" "spa" {
 locals {
   # Delegierte Tokens nimmt die API nur von diesen Clients an (azp bzw. appid im Token): von den
   # Registrierungen, die das Modul anlegt (SPA, Custom Connector, MCP-Clients), und von den
-  # Clients, die es für mcp_access vorautorisiert (Standard: VS Code). Eine fremde App, der
-  # jemand zugestimmt hat, kommt damit nicht durch. Dazu additional_allowed_client_ids. Mit
-  # existing_registration stehen nur diese in der Liste; ist sie leer, prüft die API den Client nicht.
+  # Clients, die es für mcp_access vorautorisiert (mcp_preauthorized_client_ids). Eine fremde App,
+  # der jemand zugestimmt hat, kommt damit nicht durch. Mit existing_registration stehen an ihrer
+  # Stelle die Client-IDs aus existing_registration (existing.tf). Dazu jeweils
+  # additional_allowed_client_ids.
   #
   # Feste Reihenfolge statt alles sortiert: Die Client-ID einer neuen Registrierung kennt erst
   # der Apply, eine sortierte Liste wäre im Plan ganz unbekannt und mit ihr alle App-Settings der
   # Function. Die eigenen Registrierungen sind je höchstens eine, die vorautorisierten Clients
-  # folgen sortiert, ohne Doppelte und klein geschrieben wie azp.
-  allowed_client_ids = concat(
+  # folgen sortiert, ohne Doppelte und klein geschrieben wie azp. Mit existing_registration ist
+  # alles schon im Plan bekannt; die SPA steht auch dann vorn, additional_allowed_client_ids
+  # sperren sie also nicht aus.
+  allowed_client_ids = local.create ? local.allowed_client_ids_created : local.allowed_client_ids_existing
+
+  allowed_client_ids_created = concat(
     azuread_application.spa[*].client_id,
     azuread_application.connector[*].client_id,
     azuread_application.mcp[*].client_id,
     sort(distinct([for p in values(azuread_application_pre_authorized.mcp_clients) : lower(p.authorized_client_id)])),
-    # Weitere Clients des Projekts, auch mit existing_registration.
     sort(distinct([for id in var.additional_allowed_client_ids : lower(id)])),
   )
+
+  allowed_client_ids_existing = distinct(concat(
+    local.existing_own_client_ids,
+    sort(distinct([for id in local.existing_preauthorized_client_ids : lower(id)])),
+    sort(distinct([for id in var.additional_allowed_client_ids : lower(id)])),
+  ))
 
   # Ein App-Setting je Client, so liest .NET eine Liste aus der Konfiguration; eingebunden in
   # outputs.tf.

@@ -5,17 +5,26 @@
 # Entra ist der Autorisierungsserver. Dynamische Client-Registrierung kennt Entra nicht; deshalb
 # legt das Modul je Projekt und Umgebung eine Registrierung an, deren Client-ID man einmal im
 # Client einträgt. Tokens mit Scope mcp_access nimmt die API nur von Clients an, die das Modul
-# anlegt oder vorautorisiert (Auth__AllowedClientIds, main.tf), nicht von jeder App mit
-# Einwilligung; was jemand darf, prüfen die Werkzeuge über Capabilities aus App-Rollen.
+# anlegt oder vorautorisiert (Auth__AllowedClientIds, main.tf), bei existing_registration von den
+# dort genannten, nicht von jeder App mit Einwilligung; was jemand darf, prüfen die Werkzeuge über
+# Capabilities aus App-Rollen.
 
 variable "mcp" {
-  description = "MCP-Server einschalten: Scope mcp_access an der API, öffentliche Client-Registrierung für MCP-Clients, Vorautorisierung."
+  description = "MCP-Server einschalten: Scope mcp_access an der API, öffentliche Client-Registrierung für MCP-Clients, Vorautorisierung. Mit existing_registration legt das Modul nichts davon an und verlangt existing_registration.mcp_client_id."
   type        = bool
   default     = false
+
+  # Bis v0.17.0 nur ein Hinweis im Plan (check). Ohne die Client-ID des MCP-Clients stünde er
+  # nicht in Auth__AllowedClientIds, und die API nähme mcp_access-Tokens fremder Apps an, denen
+  # eine Person zugestimmt hat.
+  validation {
+    condition     = !var.mcp || var.existing_registration == null || try(var.existing_registration.mcp_client_id, null) != null
+    error_message = "mcp mit existing_registration: Scope mcp_access, Client-Registrierung für MCP-Clients und Vorautorisierung richtet der Admin im anderen Tenant ein (README, Abschnitt MCP); existing_registration.mcp_client_id nennt den MCP-Client, damit er in Auth__AllowedClientIds steht."
+  }
 }
 
 variable "mcp_custom_domain" {
-  description = "Eigene Domain der Function für den MCP-Endpunkt, z. B. mcp.example.org; die Domain oder eine übergeordnete muss im Tenant verifiziert sein. Claude sendet die MCP-Adresse als resource (RFC 8707), und Entra stellt nur ein Token aus, wenn sie Application ID URI der API ist. Ohne Domain funktionieren nur Clients, die ohne resource anmelden, etwa VS Code. Hostname-Bindung und Zertifikat an der Function sind Handarbeit (README)."
+  description = "Eigene Domain der Function für den MCP-Endpunkt, z. B. mcp.example.org; die Domain oder eine übergeordnete muss im Tenant verifiziert sein. Claude sendet die MCP-Adresse als resource (RFC 8707), und Entra stellt nur ein Token aus, wenn sie Application ID URI der API ist. Ohne Domain funktionieren nur Clients, die ohne resource anmelden, etwa VS Code (über mcp_preauthorized_client_ids). Hostname-Bindung und Zertifikat an der Function sind Handarbeit (README)."
   type        = string
   default     = null
 
@@ -36,16 +45,21 @@ variable "mcp_redirect_uris" {
   ]
 
   validation {
-    condition     = alltrue([for uri in var.mcp_redirect_uris : can(regex("^(https://|http://localhost[:/]|http://127\\.0\\.0\\.1[:/])", uri))])
+    condition     = alltrue([for uri in var.mcp_redirect_uris : can(regex("^(https://|http://(localhost|127\\.0\\.0\\.1)(:\\d+)?(/|$))", uri))])
     error_message = "mcp_redirect_uris: jeweils https:// oder http://localhost bzw. http://127.0.0.1."
   }
 }
 
 variable "mcp_preauthorized_client_ids" {
-  description = "Weitere Clients mit eigener Entra-Registrierung, die mcp_access ohne Einwilligungsdialog bekommen; sie stehen auch in Auth__AllowedClientIds. Standard: VS Code (aebc6443-…), das sich bei Entra immer mit seiner eigenen Registrierung anmeldet."
+  description = "Weitere Clients mit eigener Entra-Registrierung, die mcp_access ohne Einwilligungsdialog bekommen; sie stehen auch in Auth__AllowedClientIds. Standard leer; bis v0.17.0 VS Code. VS Code (aebc6443-996d-45c2-90f0-388ff96faa56) meldet sich bei Entra immer mit seiner eigenen Registrierung an und kommt nur über diese Liste dazu. Ein vorautorisierter öffentlicher Client von Microsoft kann auch den Device-Code-Flow nutzen (README, Abschnitt MCP)."
   type        = list(string)
   nullable    = false
-  default     = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
+  default     = []
+
+  validation {
+    condition     = alltrue([for id in var.mcp_preauthorized_client_ids : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
+    error_message = "mcp_preauthorized_client_ids: jeweils eine Client-ID (GUID)."
+  }
 }
 
 locals {
@@ -164,16 +178,9 @@ resource "azuread_application_identifier_uri" "mcp" {
   identifier_uri = local.mcp_resource
 }
 
-check "mcp_existing_registration" {
-  assert {
-    condition     = !(var.mcp && !local.create)
-    error_message = "mcp mit existing_registration: Scope mcp_access, Client-Registrierung für MCP-Clients und Vorautorisierung legt das Modul nicht an; sie müssen in der vorhandenen Registrierung von Hand eingerichtet werden (README)."
-  }
-}
-
 output "mcp_client_id" {
-  description = "Client-ID der MCP-Client-Registrierung; in Claude unter „OAuth Client ID“, in Claude Code als --client-id. Null ohne mcp."
-  value       = one(azuread_application.mcp[*].client_id)
+  description = "Client-ID der MCP-Client-Registrierung; in Claude unter „OAuth Client ID“, in Claude Code als --client-id. Bei existing_registration existing_registration.mcp_client_id. Null ohne mcp."
+  value       = local.create ? one(azuread_application.mcp[*].client_id) : var.mcp ? local.existing.mcp_client_id : null
 }
 
 output "mcp_resource" {

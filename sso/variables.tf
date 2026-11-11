@@ -14,8 +14,8 @@ variable "spa_redirect_uris" {
   default     = []
 
   validation {
-    condition     = alltrue([for uri in var.spa_redirect_uris : can(regex("^(https://|http://localhost)", uri))])
-    error_message = "spa_redirect_uris: jeweils https:// oder http://localhost."
+    condition     = alltrue([for uri in var.spa_redirect_uris : can(regex("^(https://|http://(localhost|127\\.0\\.0\\.1)(:\\d+)?(/|$))", uri))])
+    error_message = "spa_redirect_uris: jeweils https:// oder http://localhost bzw. http://127.0.0.1, optional mit Port, z. B. http://localhost:5173."
   }
 }
 
@@ -63,7 +63,7 @@ variable "spa_extra_redirect_uris" {
 }
 
 variable "additional_allowed_client_ids" {
-  description = "Weitere Client-IDs (Application ID), deren delegierte Tokens die API annimmt, etwa eine andere App mit Admin-Zustimmung oder ein Dienst im On-Behalf-Of-Fluss. Kommen in Auth__AllowedClientIds hinter die Clients, die das Modul selbst anlegt oder vorautorisiert; mit existing_registration stehen nur sie dort."
+  description = "Weitere Client-IDs (Application ID), deren delegierte Tokens die API annimmt, etwa eine andere App mit Admin-Zustimmung oder ein Dienst im On-Behalf-Of-Fluss. Kommen in Auth__AllowedClientIds hinter die Clients, die das Modul selbst anlegt oder vorautorisiert, mit existing_registration hinter die Clients von dort (die SPA bleibt also zugelassen)."
   type        = list(string)
   default     = []
   nullable    = false
