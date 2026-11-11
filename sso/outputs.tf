@@ -34,7 +34,7 @@ output "spa_redirect_uris" {
 }
 
 output "app_settings" {
-  description = "App-Settings für die Function: das Feature-Flag Seed__Features__Sso und den Abschnitt Auth, den Bfs.Seed.Auth liest, dazu die zugelassenen Clients als Auth__AllowedClientIds__0, __1, … (nicht bei existing_registration)."
+  description = "App-Settings für die Function: das Feature-Flag Seed__Features__Sso und den Abschnitt Auth, den Bfs.Seed.Auth liest, dazu die zugelassenen Clients als Auth__AllowedClientIds__0, __1, …, bei existing_registration die Client-IDs von dort."
   value = merge(
     {
       # Schaltet im Template UseSeedAuth() ein. Ohne das Flag liefe die API ohne Token-Prüfung,

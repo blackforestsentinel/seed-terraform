@@ -65,10 +65,13 @@ resource "azuread_application_pre_authorized" "connector" {
   permission_ids       = [local.scope_id]
 }
 
+# Ein Hinweis im Plan: Ohne connector_client_id fehlt der Connector in Auth__AllowedClientIds.
+# Stehen dort andere Clients (etwa die SPA), lehnt die API ihn ab; steht dort keiner, prüft sie
+# den Client gar nicht.
 check "connector_existing_registration" {
   assert {
-    condition     = !(var.connector && !local.create)
-    error_message = "connector mit existing_registration: Die Client-Registrierung des Custom Connectors legt das Modul nicht an; sie muss im anderen Tenant von Hand eingerichtet werden (README)."
+    condition     = !(var.connector && !local.create && try(local.existing.connector_client_id, null) == null)
+    error_message = "connector mit existing_registration: Die Client-Registrierung des Custom Connectors legt das Modul nicht an; sie muss im anderen Tenant von Hand eingerichtet werden (README). existing_registration.connector_client_id nennt sie, damit sie in Auth__AllowedClientIds steht."
   }
 }
 

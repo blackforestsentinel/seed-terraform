@@ -57,6 +57,11 @@ run "standard_ohne_optionen" {
   }
 
   assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required == false
+    error_message = "Ohne role_filter und service_principals bleibt die SPA ohne Zuweisungspflicht, wie bisher."
+  }
+
+  assert {
     condition     = [for r in azuread_application.spa[0].required_resource_access : r.resource_app_id] == ["33333333-3333-3333-3333-333333333333"] && output.directory_permissions == null
     error_message = "Ohne directory fordert die SPA nur die eigene API an, keine Graph-Berechtigungen."
   }
@@ -164,6 +169,11 @@ run "verzeichnis_mit_presence_und_rollenfilter" {
     }
     error_message = "Nur die Berechtigungen für den Rollenfilter brauchen zwingend Administratorzustimmung."
   }
+
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required && azuread_service_principal.api[0].app_role_assignment_required
+    error_message = "Mit role_filter haben API und SPA die Zuweisungspflicht; sonst bekäme jedes Konto über die SPA ein Graph-Token."
+  }
 }
 
 run "verzeichnis_mit_service_principals" {
@@ -184,6 +194,11 @@ run "verzeichnis_mit_service_principals" {
   assert {
     condition     = output.directory_permissions.admin_consent_required
     error_message = "Application.Read.All braucht Administratorzustimmung."
+  }
+
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required
+    error_message = "Mit service_principals hat die SPA die Zuweisungspflicht."
   }
 }
 
@@ -267,6 +282,11 @@ run "verzeichnis_aus_trotz_weiterer_schalter" {
   assert {
     condition     = !contains(keys(output.frontend_config.auth), "directory") && output.directory_permissions == null
     error_message = "Ohne enabled kein directory in frontend_config und keine Ausgabe."
+  }
+
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required == false
+    error_message = "Ohne enabled wirken role_filter und service_principals auch nicht auf die Zuweisungspflicht der SPA."
   }
 }
 
@@ -428,13 +448,14 @@ run "vorhandene_registrierung_aus_anderem_tenant" {
 
   assert {
     condition = output.app_settings == {
-      Seed__Features__Sso = "true"
-      Auth__TenantId      = "44444444-4444-4444-4444-444444444444"
-      Auth__ClientId      = "55555555-5555-5555-5555-555555555555"
-      Auth__Audience      = "https://api.kunde.example"
-      Auth__RequiredScope = "Billing.ReadWrite"
+      Seed__Features__Sso       = "true"
+      Auth__TenantId            = "44444444-4444-4444-4444-444444444444"
+      Auth__ClientId            = "55555555-5555-5555-5555-555555555555"
+      Auth__Audience            = "https://api.kunde.example"
+      Auth__RequiredScope       = "Billing.ReadWrite"
+      Auth__AllowedClientIds__0 = "66666666-6666-6666-6666-666666666666"
     }
-    error_message = "Die API prüft gegen den anderen Tenant, die Audience und die Berechtigung der vorhandenen Registrierung."
+    error_message = "Die API prüft gegen den anderen Tenant, die Audience und die Berechtigung der vorhandenen Registrierung und lässt die SPA von dort als Client zu."
   }
 
   assert {
@@ -472,6 +493,132 @@ run "vorhandene_registrierung_ohne_frontend" {
   assert {
     condition     = output.app_settings.Auth__Audience == "api://kunde-api" && !contains(keys(output.app_settings), "Auth__RequiredScope")
     error_message = "audience überschreibt die abgeleitete Application ID URI; access_as_user braucht kein Auth__RequiredScope."
+  }
+}
+
+run "redirect_uris_loopback" {
+  command = plan
+
+  variables {
+    spa_redirect_uris = ["https://app.example.org", "http://localhost:5173", "http://127.0.0.1:5173/", "http://localhost"]
+    mcp               = true
+    mcp_redirect_uris = ["https://claude.ai/api/mcp/auth_callback", "http://localhost/callback", "http://127.0.0.1:33418/callback", "http://localhost"]
+  }
+
+  assert {
+    condition     = contains(output.spa_redirect_uris, "http://127.0.0.1:5173/") && contains(output.spa_redirect_uris, "http://localhost/")
+    error_message = "localhost und 127.0.0.1 mit und ohne Port sind erlaubt."
+  }
+}
+
+run "spa_redirect_uris_localhost_mit_fremder_domain" {
+  command = plan
+
+  variables {
+    spa_redirect_uris = ["http://localhost.evil.example/"]
+  }
+
+  expect_failures = [var.spa_redirect_uris]
+}
+
+run "spa_redirect_uris_localhost_mit_benutzer" {
+  command = plan
+
+  variables {
+    spa_redirect_uris = ["http://localhost@evil.example/"]
+  }
+
+  expect_failures = [var.spa_redirect_uris]
+}
+
+run "mcp_redirect_uris_loopback_mit_fremder_domain" {
+  command = plan
+
+  variables {
+    mcp               = true
+    mcp_redirect_uris = ["http://127.0.0.1.evil.example/callback"]
+  }
+
+  expect_failures = [var.mcp_redirect_uris]
+}
+
+run "verzeichnis_rollenfilter_ohne_zuweisung" {
+  command = plan
+
+  variables {
+    directory           = { enabled = true, role_filter = true }
+    assignment_required = false
+  }
+
+  expect_failures = [var.directory]
+}
+
+run "verzeichnis_service_principals_ohne_zuweisung" {
+  command = plan
+
+  variables {
+    directory           = { enabled = true, service_principals = true }
+    assignment_required = false
+  }
+
+  expect_failures = [var.directory]
+}
+
+run "verzeichnis_rollenfilter_spa_ohne_zuweisung" {
+  command = plan
+
+  variables {
+    directory               = { enabled = true, role_filter = true }
+    spa_assignment_required = false
+  }
+
+  expect_failures = [var.directory]
+}
+
+run "spa_zuweisung_ausdruecklich_an" {
+  command = plan
+
+  variables {
+    spa_assignment_required = true
+  }
+
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required
+    error_message = "spa_assignment_required = true setzt die Zuweisungspflicht an der SPA auch ohne directory."
+  }
+}
+
+run "spa_zuweisung_mit_vorhandener_registrierung" {
+  command = plan
+
+  variables {
+    spa_assignment_required = true
+    directory               = { enabled = true, role_filter = true }
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      spa_client_id = "66666666-6666-6666-6666-666666666666"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
+  }
+
+  assert {
+    condition     = length(azuread_service_principal.spa) == 0
+    error_message = "Mit existing_registration legt das Modul keinen Service Principal für die SPA an; die Zuweisungspflicht setzt der Admin dort."
+  }
+}
+
+run "verzeichnis_ohne_rollenfilter_ohne_zuweisung" {
+  command = plan
+
+  variables {
+    directory           = { enabled = true, presence = true }
+    assignment_required = false
+  }
+
+  assert {
+    condition     = length(output.directory_permissions.permissions) == 4
+    error_message = "Ohne role_filter und service_principals geht directory auch ohne Zuweisungspflicht."
   }
 }
 
@@ -553,12 +700,98 @@ run "connector_mit_vorhandener_registrierung" {
   expect_failures = [check.connector_existing_registration]
 }
 
-run "vorhandene_registrierung_ohne_zugelassene_clients" {
+run "vorhandene_registrierung_mit_zugelassenen_clients" {
+  command = plan
+
+  variables {
+    connector                     = true
+    mcp                           = true
+    additional_allowed_client_ids = ["CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC", "66666666-6666-6666-6666-666666666666"]
+    existing_registration = {
+      tenant_id                    = "44444444-4444-4444-4444-444444444444"
+      api_client_id                = "55555555-5555-5555-5555-555555555555"
+      spa_client_id                = "66666666-6666-6666-6666-666666666666"
+      api_scope                    = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+      connector_client_id          = "88888888-8888-8888-8888-888888888888"
+      mcp_client_id                = "99999999-9999-9999-9999-999999999999"
+      mcp_preauthorized_client_ids = ["AEBC6443-996D-45C2-90F0-388FF96FAA56"]
+    }
+  }
+
+  assert {
+    condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
+      Auth__AllowedClientIds__0 = "66666666-6666-6666-6666-666666666666"
+      Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
+      Auth__AllowedClientIds__2 = "99999999-9999-9999-9999-999999999999"
+      Auth__AllowedClientIds__3 = "aebc6443-996d-45c2-90f0-388ff96faa56"
+      Auth__AllowedClientIds__4 = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    }
+    error_message = "Mit existing_registration: SPA, Connector-Client, MCP-Client, vorautorisierte Clients und weitere Clients aus dem anderen Tenant, klein geschrieben und ohne Doppelte."
+  }
+
+  assert {
+    condition     = length(azuread_application.connector) + length(azuread_application.mcp) + length(azuread_application_pre_authorized.mcp_clients) == 0
+    error_message = "Mit existing_registration legt das Modul weder Connector- noch MCP-Client an."
+  }
+
+  assert {
+    condition     = output.mcp_client_id == "99999999-9999-9999-9999-999999999999" && output.connector_client_id == null
+    error_message = "mcp_client_id nennt den MCP-Client aus existing_registration; connector_client_id bleibt null, die Pipeline ändert keine fremde Registrierung."
+  }
+}
+
+run "vorhandene_registrierung_clients_nur_mit_schalter" {
+  command = plan
+
+  variables {
+    existing_registration = {
+      tenant_id                    = "44444444-4444-4444-4444-444444444444"
+      api_client_id                = "55555555-5555-5555-5555-555555555555"
+      spa_client_id                = "66666666-6666-6666-6666-666666666666"
+      api_scope                    = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+      connector_client_id          = "88888888-8888-8888-8888-888888888888"
+      mcp_client_id                = "99999999-9999-9999-9999-999999999999"
+      mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
+    }
+  }
+
+  assert {
+    condition     = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == { Auth__AllowedClientIds__0 = "66666666-6666-6666-6666-666666666666" }
+    error_message = "Ohne connector und mcp steht nur die SPA in der Liste, wie bei eigenen Registrierungen."
+  }
+
+  assert {
+    condition     = output.mcp_client_id == null
+    error_message = "Ohne mcp ist mcp_client_id null."
+  }
+}
+
+run "connector_mit_vorhandener_registrierung_und_client_id" {
   command = plan
 
   variables {
     connector = true
-    mcp       = true
+    existing_registration = {
+      tenant_id           = "44444444-4444-4444-4444-444444444444"
+      api_client_id       = "55555555-5555-5555-5555-555555555555"
+      api_scope           = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+      connector_client_id = "88888888-8888-8888-8888-888888888888"
+    }
+  }
+
+  # Ohne expect_failures: Mit connector_client_id bleibt der Hinweis (check) aus.
+  assert {
+    condition     = output.app_settings.Auth__AllowedClientIds__0 == "88888888-8888-8888-8888-888888888888"
+    error_message = "Der Connector-Client aus existing_registration ist zugelassen."
+  }
+}
+
+# Bis v0.17.0 nur ein Hinweis (check); MCP ginge dann ohne Liste zugelassener Clients live.
+run "mcp_mit_vorhandener_registrierung_ohne_mcp_client" {
+  command = plan
+
+  variables {
+    mcp = true
     existing_registration = {
       tenant_id     = "44444444-4444-4444-4444-444444444444"
       api_client_id = "55555555-5555-5555-5555-555555555555"
@@ -567,12 +800,22 @@ run "vorhandene_registrierung_ohne_zugelassene_clients" {
     }
   }
 
-  assert {
-    condition     = length([for k in keys(output.app_settings) : k if startswith(k, "Auth__AllowedClientIds__")]) == 0
-    error_message = "Mit existing_registration keine zugelassenen Clients, auch mit SPA, connector und mcp; die API prüft den Client dann nicht."
+  expect_failures = [var.mcp]
+}
+
+run "vorhandene_registrierung_nur_guids" {
+  command = plan
+
+  variables {
+    existing_registration = {
+      tenant_id     = "44444444-4444-4444-4444-444444444444"
+      api_client_id = "55555555-5555-5555-5555-555555555555"
+      spa_client_id = "meine-spa"
+      api_scope     = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+    }
   }
 
-  expect_failures = [check.connector_existing_registration, check.mcp_existing_registration]
+  expect_failures = [var.existing_registration]
 }
 
 run "weitere_zugelassene_clients" {
@@ -604,8 +847,11 @@ run "weitere_zugelassene_clients_mit_vorhandener_registrierung" {
   }
 
   assert {
-    condition     = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == { Auth__AllowedClientIds__0 = "cccccccc-cccc-cccc-cccc-cccccccccccc" }
-    error_message = "Mit existing_registration stehen nur die weiteren Clients in der Liste."
+    condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
+      Auth__AllowedClientIds__0 = "66666666-6666-6666-6666-666666666666"
+      Auth__AllowedClientIds__1 = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    }
+    error_message = "Mit existing_registration bleibt die SPA vorn in der Liste; weitere Clients sperren sie nicht aus."
   }
 }
 
@@ -646,10 +892,44 @@ run "mcp_zugelassene_clients" {
     condition = { for k, v in output.app_settings : k => v if startswith(k, "Auth__AllowedClientIds__") } == {
       Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
       Auth__AllowedClientIds__1 = "99999999-9999-9999-9999-999999999999"
-      Auth__AllowedClientIds__2 = "aebc6443-996d-45c2-90f0-388ff96faa56"
     }
-    error_message = "Mit mcp sind SPA, MCP-Client und VS Code (Standard von mcp_preauthorized_client_ids) zugelassen."
+    error_message = "Mit mcp sind SPA und MCP-Client zugelassen; VS Code ab v0.18.0 nur auf Wunsch."
   }
+
+  assert {
+    condition     = length(azuread_application_pre_authorized.mcp_clients) == 0 && length(azuread_application_pre_authorized.mcp) == 1
+    error_message = "Standard: nur der eigene MCP-Client ist für mcp_access vorautorisiert, kein Client von Microsoft."
+  }
+}
+
+run "mcp_mit_vs_code" {
+  variables {
+    mcp                          = true
+    mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
+  }
+
+  override_resource {
+    target = azuread_application.mcp
+    values = {
+      client_id = "99999999-9999-9999-9999-999999999999"
+    }
+  }
+
+  assert {
+    condition     = output.app_settings.Auth__AllowedClientIds__2 == "aebc6443-996d-45c2-90f0-388ff96faa56" && azuread_application_pre_authorized.mcp_clients["aebc6443-996d-45c2-90f0-388ff96faa56"].permission_ids == toset([for s in azuread_application.api[0].api[0].oauth2_permission_scope : s.id if s.value == "mcp_access"])
+    error_message = "VS Code als Opt-in: vorautorisiert nur für mcp_access und zugelassen."
+  }
+}
+
+run "mcp_vorautorisierte_clients_nur_guids" {
+  command = plan
+
+  variables {
+    mcp                          = true
+    mcp_preauthorized_client_ids = ["vscode"]
+  }
+
+  expect_failures = [var.mcp_preauthorized_client_ids]
 }
 
 run "zugelassene_clients_reihenfolge" {
@@ -702,8 +982,9 @@ run "zugelassene_clients_im_plan_bekannt" {
   state_key = "plan"
 
   variables {
-    connector = true
-    mcp       = true
+    connector                    = true
+    mcp                          = true
+    mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
   }
 
   assert {
