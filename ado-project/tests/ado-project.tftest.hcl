@@ -49,6 +49,21 @@ mock_provider "azuredevops" {
     }
   }
 
+  mock_data "azuredevops_client_config" {
+    defaults = {
+      name = "example-org"
+    }
+  }
+
+  # Build-Service-Identität des Projekts: Deskriptor mit :Build:<Projekt-ID>.
+  mock_data "azuredevops_identity_user" {
+    defaults = {
+      id                 = "99999999-9999-9999-9999-999999999999"
+      descriptor         = "Microsoft.TeamFoundation.ServiceIdentity;00000000-0000-0000-0000-000000000001:Build:11111111-1111-1111-1111-111111111111"
+      subject_descriptor = "svc.YnVpbGQtc2VydmljZQ"
+    }
+  }
+
   mock_data "azuredevops_agent_queue" {
     defaults = {
       id = 5
@@ -116,6 +131,74 @@ run "standard_wie_bisher" {
     condition     = !strcontains(azuredevops_git_repository_file.pipeline.content, "pool:") && length(azuredevops_pipeline_authorization.pool) == 0
     error_message = "Ohne pool bleibt azure-pipelines.yml bei Microsoft-gehosteten Agents, ohne Queue-Berechtigung."
   }
+}
+
+run "repo_rechte_eingeschraenkt" {
+  command = plan
+
+  override_data {
+    target = data.azuredevops_group.contributors
+    values = {
+      descriptor = "vssgp.Y29udHJpYnV0b3Jz"
+    }
+  }
+
+  assert {
+    condition = (
+      azuredevops_git_permissions.repository["contributors"].principal == "vssgp.Y29udHJpYnV0b3Jz" &&
+      azuredevops_git_permissions.repository["build_service"].principal == "svc.YnVpbGQtc2VydmljZQ"
+    )
+    error_message = "Standard: Rechte für Contributors und die Build-Service-Identität des Projekts."
+  }
+
+  assert {
+    condition = alltrue([
+      for p in azuredevops_git_permissions.repository : p.permissions == tomap({
+        CreateTag               = "Deny"
+        ForcePush               = "Deny"
+        PolicyExempt            = "Deny"
+        PullRequestBypassPolicy = "Deny"
+        EditPolicies            = "Deny"
+      }) && p.replace == false && p.branch_name == null && p.project_id == "11111111-1111-1111-1111-111111111111"
+    ])
+    error_message = "Deny für Create tag, Force push, Bypass policies (Push und PR) und Edit policies am ganzen Repo, ohne andere Einträge zu ersetzen."
+  }
+
+  assert {
+    condition     = data.azuredevops_group.contributors[0].name == "Contributors" && data.azuredevops_group.contributors[0].project_id == "11111111-1111-1111-1111-111111111111"
+    error_message = "Contributors ist die Gruppe des Projekts, nicht der Organisation."
+  }
+
+  assert {
+    condition     = data.azuredevops_identity_user.build_service[0].name == "Kundenprojekte Build Service (example-org)"
+    error_message = "Die Build-Service-Identität heißt <Projekt> Build Service (<Organisation>)."
+  }
+}
+
+run "repo_rechte_aus" {
+  command = plan
+
+  variables {
+    protect_repository = false
+  }
+
+  assert {
+    condition     = length(azuredevops_git_permissions.repository) == 0 && length(data.azuredevops_identity_user.build_service) == 0 && length(data.azuredevops_group.contributors) == 0
+    error_message = "protect_repository = false lässt die Rechte am Repo unverändert und sucht keine Identitäten."
+  }
+}
+
+run "repo_rechte_falsche_build_identitaet" {
+  command = plan
+
+  override_data {
+    target = data.azuredevops_identity_user.build_service
+    values = {
+      descriptor = "Microsoft.TeamFoundation.ServiceIdentity;00000000-0000-0000-0000-000000000001:Build:00000000-0000-0000-0000-000000000002"
+    }
+  }
+
+  expect_failures = [data.azuredevops_identity_user.build_service]
 }
 
 run "zentrales_scaffold" {
@@ -202,8 +285,9 @@ run "vorhandenes_repo" {
       azuredevops_git_repository_file.pipeline.repository_id == "77777777-7777-7777-7777-777777777777",
       one(azuredevops_build_definition.this.repository).repo_id == "77777777-7777-7777-7777-777777777777",
       one(one(azuredevops_branch_policy_build_validation.this).settings[0].scope).repository_id == "77777777-7777-7777-7777-777777777777",
+      alltrue([for p in azuredevops_git_permissions.repository : p.repository_id == "77777777-7777-7777-7777-777777777777"]),
     ])
-    error_message = "Dateien, Pipeline und Policy hängen am vorhandenen Repo."
+    error_message = "Dateien, Pipeline, Policy und Rechte hängen am vorhandenen Repo."
   }
 
   assert {
@@ -354,4 +438,84 @@ run "owner_nur_als_mail" {
   }
 
   expect_failures = [var.owner]
+}
+
+# Werte, die in azure-pipelines.yml landen: Ein Zeilenumbruch oder ": " darf das YAML nicht
+# umschreiben, etwa confirmDataDeletion setzen oder ein Repo ergänzen.
+run "pipelines_version_nur_tag" {
+  command = plan
+
+  variables {
+    pipelines_version = "v0.17.0\n    confirmDataDeletion: true"
+  }
+
+  expect_failures = [var.pipelines_version]
+}
+
+run "github_connection_ohne_zeilenumbruch" {
+  command = plan
+
+  variables {
+    github_connection = "github-example\n    - repository: fremd"
+  }
+
+  expect_failures = [var.github_connection]
+}
+
+run "service_connection_ohne_doppelpunkt" {
+  command = plan
+
+  variables {
+    service_connection = "sc-seed\n    confirmDataDeletion: true"
+  }
+
+  expect_failures = [var.service_connection]
+}
+
+run "pool_ohne_zeilenumbruch" {
+  command = plan
+
+  variables {
+    pool = "Default\n    confirmDataDeletion: true"
+  }
+
+  expect_failures = [var.pool]
+}
+
+run "terraform_state_nur_namen" {
+  command = plan
+
+  variables {
+    terraform_state = {
+      resource_group  = "rg-seed-tfstate\n    confirmDataDeletion: true"
+      storage_account = "StSeed-TfState"
+      container       = "tfstate: x"
+    }
+  }
+
+  expect_failures = [var.terraform_state]
+}
+
+run "environments_nur_namen" {
+  command = plan
+
+  variables {
+    environments = ["dev", "prod\n    confirmDataDeletion: true"]
+  }
+
+  expect_failures = [var.environments]
+}
+
+run "pool_mit_leerzeichen" {
+  command   = plan
+  state_key = "pool"
+
+  variables {
+    pool = "Azure Pipelines"
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.pool == "Azure Pipelines"
+    error_message = "Pool-Namen mit Leerzeichen bleiben erlaubt."
+  }
 }
