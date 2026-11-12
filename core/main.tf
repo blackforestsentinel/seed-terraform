@@ -31,17 +31,54 @@ locals {
   )
 }
 
+# Resource Group rg-<name>-<environment>. Mit create_resource_group = false gibt es sie schon:
+# Das zentrale Scaffold legt sie vorab an und gibt der Identität des Projekts nur dort Rollen;
+# das Modul liest sie dann nur und ändert weder sie noch ihre Tags.
 resource "azurerm_resource_group" "this" {
-  name     = "rg-${local.base}"
+  count = var.create_resource_group ? 1 : 0
+
+  name     = local.resource_group_name
   location = var.location
   tags     = local.tags
+}
+
+# Bis v0.19.0 ohne count. Die Verschiebung ändert nur den State, nicht die Ressource.
+moved {
+  from = azurerm_resource_group.this
+  to   = azurerm_resource_group.this[0]
+}
+
+data "azurerm_resource_group" "existing" {
+  count = var.create_resource_group ? 0 : 1
+
+  name = local.resource_group_name
+}
+
+locals {
+  # Über die Ressource bzw. die Datenquelle, damit alles Weitere auf die Resource Group wartet.
+  resource_group_name = "rg-${local.base}"
+  resource_group = {
+    name = var.create_resource_group ? azurerm_resource_group.this[0].name : data.azurerm_resource_group.existing[0].name
+    id   = var.create_resource_group ? azurerm_resource_group.this[0].id : data.azurerm_resource_group.existing[0].id
+  }
+}
+
+# Die Ressourcen entstehen in var.location, auch wenn die vorhandene Resource Group in einer
+# anderen Region liegt. Das ist erlaubt, aber selten gewollt; deshalb nur eine Warnung.
+check "resource_group_location" {
+  assert {
+    condition = alltrue([
+      for rg in data.azurerm_resource_group.existing : replace(lower(rg.location), " ", "") == replace(lower(var.location), " ", "")
+    ])
+    error_message = "Die vorhandene Resource Group liegt nicht in location (${var.location}); Function, Storage und Monitoring entstehen trotzdem dort."
+  }
 }
 
 # --- Monitoring ---------------------------------------------------------------
 
 resource "azurerm_log_analytics_workspace" "this" {
   name                = "log-${local.base}"
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group.name
   location            = var.location
   sku                 = "PerGB2018"
   retention_in_days   = var.log_retention_days
@@ -57,7 +94,7 @@ resource "azurerm_log_analytics_workspace" "this" {
 
 resource "azurerm_application_insights" "this" {
   name                = "appi-${local.base}"
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group.name
   location            = var.location
   workspace_id        = azurerm_log_analytics_workspace.this.id
   application_type    = "web"
@@ -79,7 +116,7 @@ resource "azurerm_role_assignment" "app_insights_publisher" {
 
 resource "azurerm_storage_account" "host" {
   name                            = local.storage_account_name
-  resource_group_name             = azurerm_resource_group.this.name
+  resource_group_name             = local.resource_group.name
   location                        = var.location
   account_tier                    = "Standard"
   account_replication_type        = "LRS"
@@ -98,7 +135,7 @@ resource "azurerm_storage_container" "deployment" {
 
 resource "azurerm_user_assigned_identity" "function" {
   name                = "id-${local.base}"
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group.name
   location            = var.location
   tags                = local.tags
 }
@@ -120,7 +157,7 @@ resource "azurerm_role_assignment" "host_storage" {
 
 resource "azurerm_service_plan" "this" {
   name                = "asp-${local.base}"
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group.name
   location            = var.location
   os_type             = "Linux"
   sku_name            = "FC1"
@@ -133,7 +170,7 @@ resource "azurerm_service_plan" "this" {
 resource "azapi_resource" "function_app" {
   type      = "Microsoft.Web/sites@2024-11-01"
   name      = local.function_app_name
-  parent_id = azurerm_resource_group.this.id
+  parent_id = local.resource_group.id
   location  = var.location
   tags      = local.tags
 
@@ -224,7 +261,7 @@ resource "azurerm_static_web_app" "this" {
   count = local.static_web_app ? 1 : 0
 
   name                = "swa-${local.base}"
-  resource_group_name = azurerm_resource_group.this.name
+  resource_group_name = local.resource_group.name
   location            = var.static_web_app_location
   sku_tier            = var.static_web_app_sku
   sku_size            = var.static_web_app_sku

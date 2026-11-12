@@ -1,11 +1,11 @@
 output "resource_group_name" {
   description = "Name der Resource Group des Projekts."
-  value       = azurerm_resource_group.this.name
+  value       = local.resource_group.name
 }
 
 output "resource_group_id" {
   description = "ID der Resource Group, z. B. als Geltungsbereich des Budgets im Modul monitoring."
-  value       = azurerm_resource_group.this.id
+  value       = local.resource_group.id
 }
 
 output "location" {
