@@ -10,6 +10,11 @@ owner: ${jsonencode(owner)}
 # TODO(onboarding): Adresse eintragen.
 owner: ""
 %{ endif ~}
+%{ if !create_resource_groups ~}
+
+# Die Resource Groups rg-<project>-<umgebung> legt das Scaffold vorab an; Terraform liest sie nur.
+createResourceGroups: false
+%{ endif ~}
 
 features:
   # Login mit Entra ID: App-Registrierungen, Token-Prüfung in der API, MSAL im Frontend

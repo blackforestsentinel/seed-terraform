@@ -519,3 +519,421 @@ run "pool_mit_leerzeichen" {
     error_message = "Pool-Namen mit Leerzeichen bleiben erlaubt."
   }
 }
+
+# --- Selbstbedienung: Projekt, eigene Service Connection, Mitglieder (ab v0.20.0) ---------
+# Eigener State: Die Läufe oben haben mit vorhandenes_repo schon angelegt.
+
+run "selbstbedienung_aus_wie_bisher" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  assert {
+    condition     = length(azuredevops_project.this) == 0 && length(data.azuredevops_project.this) == 1 && output.project_id == "11111111-1111-1111-1111-111111111111"
+    error_message = "Standard: vorhandenes Projekt, kein neues."
+  }
+
+  assert {
+    condition = alltrue([
+      length(azuredevops_serviceendpoint_azurerm.this) == 0,
+      length(azuredevops_check_branch_control.service_connection) == 0,
+      length(azuredevops_check_required_template.service_connection) == 0,
+      length(data.azuredevops_serviceendpoint_azurerm.this) == 1,
+      azuredevops_pipeline_authorization.endpoints["azure"].resource_id == "33333333-3333-3333-3333-333333333333",
+      output.service_connection_id == "33333333-3333-3333-3333-333333333333",
+      output.workload_identity_federation_issuer == "",
+      output.workload_identity_federation_subject == "",
+    ])
+    error_message = "Standard: vorhandene Service Connection berechtigen, keine eigene, keine Checks; Issuer und Subject leer."
+  }
+
+  assert {
+    condition     = length(azuredevops_group_membership.contributors) == 0 && length(azuredevops_group_membership.project_administrators) == 0 && length(data.azuredevops_users.members) == 0
+    error_message = "Standard: keine Mitglieder."
+  }
+
+  assert {
+    condition = alltrue([
+      one(azuredevops_branch_policy_min_reviewers.this).settings[0].reviewer_count == 1,
+      !one(azuredevops_branch_policy_min_reviewers.this).settings[0].submitter_can_vote,
+    ])
+    error_message = "Standard: ein Pflicht-Reviewer, die eigene Stimme zählt nicht."
+  }
+}
+
+run "selbstbedienung_ohne_berechtigung" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    authorize_service_connections = false
+  }
+
+  assert {
+    condition     = length(data.azuredevops_serviceendpoint_azurerm.this) == 0 && length(azuredevops_pipeline_authorization.endpoints) == 0 && output.service_connection_id == ""
+    error_message = "Ohne Berechtigung und ohne eigene Service Connection: keine Suche, keine Berechtigung, service_connection_id leer."
+  }
+}
+
+run "projekt_anlegen" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_project      = true
+    project_description = "Seed-Projekt kundenportal"
+  }
+
+  assert {
+    condition     = length(data.azuredevops_project.this) == 0
+    error_message = "Mit create_project kein vorhandenes Projekt suchen."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_project.this[0].name == "Kundenprojekte",
+      azuredevops_project.this[0].description == "Seed-Projekt kundenportal",
+      azuredevops_project.this[0].visibility == "private",
+      azuredevops_project.this[0].version_control == "Git",
+      azuredevops_project.this[0].work_item_template == null,
+    ])
+    error_message = "Neues Projekt: Name aus ado_project, privat, Git, Prozess wie Provider-Standard."
+  }
+
+  assert {
+    condition = azuredevops_project.this[0].features == tomap({
+      boards       = "disabled"
+      repositories = "enabled"
+      pipelines    = "enabled"
+      testplans    = "disabled"
+      artifacts    = "disabled"
+    })
+    error_message = "Neues Projekt: nur Repos und Pipelines."
+  }
+
+  assert {
+    condition     = data.azuredevops_identity_user.build_service[0].name == "Kundenprojekte Build Service (example-org)"
+    error_message = "Die Build-Service-Identität heißt auch im neuen Projekt <Projekt> Build Service (<Organisation>)."
+  }
+}
+
+run "projekt_anlegen_nur_mit_namen" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_project = true
+    ado_project    = "Kunden/Projekte"
+  }
+
+  expect_failures = [var.ado_project]
+}
+
+run "eigene_service_connection" {
+  command   = apply
+  state_key = "service_connection"
+
+  variables {
+    pipelines_version         = "v0.20.0"
+    service_connection        = "sc-kundenportal"
+    create_service_connection = true
+    service_connection_identity = {
+      tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+      subscription_name = "Seed Beispiel"
+      client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    }
+  }
+
+  override_resource {
+    target = azuredevops_serviceendpoint_azurerm.this
+    values = {
+      id                                   = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+      workload_identity_federation_issuer  = "https://login.microsoftonline.com/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/v2.0"
+      workload_identity_federation_subject = "/eid1/c/pub/t/beispiel/a/beispiel/sc/beispiel/dddddddd-dddd-dddd-dddd-dddddddddddd"
+    }
+  }
+
+  assert {
+    condition     = length(data.azuredevops_serviceendpoint_azurerm.this) == 0
+    error_message = "Mit create_service_connection keine vorhandene Service Connection suchen."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_serviceendpoint_azurerm.this[0].service_endpoint_name == "sc-kundenportal",
+      azuredevops_serviceendpoint_azurerm.this[0].project_id == "11111111-1111-1111-1111-111111111111",
+      azuredevops_serviceendpoint_azurerm.this[0].service_endpoint_authentication_scheme == "WorkloadIdentityFederation",
+      azuredevops_serviceendpoint_azurerm.this[0].credentials[0].serviceprincipalid == "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      azuredevops_serviceendpoint_azurerm.this[0].credentials[0].serviceprincipalkey == null,
+      azuredevops_serviceendpoint_azurerm.this[0].azurerm_spn_tenantid == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      azuredevops_serviceendpoint_azurerm.this[0].azurerm_subscription_id == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      azuredevops_serviceendpoint_azurerm.this[0].azurerm_subscription_name == "Seed Beispiel",
+      azuredevops_serviceendpoint_azurerm.this[0].features[0].validate == false,
+    ])
+    error_message = "Eigene Service Connection: Workload Identity Federation, manuell mit der client_id der Projekt-Identität, ohne Secret und ohne Prüfung beim Anlegen."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_check_branch_control.service_connection[0].target_resource_id == "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      azuredevops_check_branch_control.service_connection[0].target_resource_type == "endpoint",
+      azuredevops_check_branch_control.service_connection[0].allowed_branches == "refs/heads/main,refs/tags/v0.20.0",
+      azuredevops_check_branch_control.service_connection[0].verify_branch_protection == false,
+      azuredevops_check_branch_control.service_connection[0].ignore_unknown_protection_status == false,
+      azuredevops_check_branch_control.service_connection[0].timeout == null,
+    ])
+    error_message = "Branch-Prüfung an der eigenen Service Connection: main und seed-pipelines am eingebundenen Tag, Timeout wie Provider-Standard."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_check_required_template.service_connection[0].target_resource_id == "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      azuredevops_check_required_template.service_connection[0].target_resource_type == "endpoint",
+      azuredevops_check_required_template.service_connection[0].required_template[0].repository_type == "github",
+      azuredevops_check_required_template.service_connection[0].required_template[0].repository_name == "blackforestsentinel/seed-pipelines",
+      azuredevops_check_required_template.service_connection[0].required_template[0].repository_ref == "refs/tags/v0.20.0",
+      azuredevops_check_required_template.service_connection[0].required_template[0].template_path == "templates/web-app.yml",
+      length(azuredevops_check_required_template.service_connection[0].required_template) == 1,
+    ])
+    error_message = "Required template: templates/web-app.yml aus seed-pipelines am Tag pipelines_version."
+  }
+
+  assert {
+    condition     = azuredevops_pipeline_authorization.endpoints["azure"].resource_id == "dddddddd-dddd-dddd-dddd-dddddddddddd" && azuredevops_pipeline_authorization.endpoints["github"].resource_id == "44444444-4444-4444-4444-444444444444"
+    error_message = "Die Pipeline ist für die eigene Service Connection berechtigt, die GitHub-Service-Connection bleibt die vorhandene."
+  }
+
+  assert {
+    condition = alltrue([
+      output.service_connection_id == "dddddddd-dddd-dddd-dddd-dddddddddddd",
+      output.workload_identity_federation_issuer == "https://login.microsoftonline.com/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/v2.0",
+      output.workload_identity_federation_subject == "/eid1/c/pub/t/beispiel/a/beispiel/sc/beispiel/dddddddd-dddd-dddd-dddd-dddddddddddd",
+    ])
+    error_message = "Outputs: ID, Issuer und Subject der eigenen Service Connection für das Federated Credential."
+  }
+}
+
+run "eigene_service_connection_fork" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_service_connection    = true
+    required_template_repository = "beispiel-org/seed-pipelines"
+    service_connection_identity = {
+      tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+      subscription_name = "Seed Beispiel"
+      client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    }
+  }
+
+  assert {
+    condition     = azuredevops_check_required_template.service_connection[0].required_template[0].repository_name == "beispiel-org/seed-pipelines" && azuredevops_check_required_template.service_connection[0].required_template[0].repository_ref == "refs/tags/v0.13.0"
+    error_message = "required_template_repository ersetzt seed-pipelines im Check, etwa für einen Fork."
+  }
+}
+
+run "eigene_service_connection_ohne_identitaet" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_service_connection = true
+  }
+
+  expect_failures = [var.service_connection_identity]
+}
+
+run "eigene_service_connection_identitaet_als_guid" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_service_connection = true
+    service_connection_identity = {
+      tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+      subscription_name = "Seed Beispiel"
+      client_id         = "id-kundenportal"
+    }
+  }
+
+  expect_failures = [var.service_connection_identity]
+}
+
+run "template_repo_nur_besitzer_und_name" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    required_template_repository = "https://github.com/beispiel-org/seed-pipelines"
+  }
+
+  expect_failures = [var.required_template_repository]
+}
+
+run "mitglieder" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    protect_repository     = false
+    contributors           = ["freigabe@example.org"]
+    project_administrators = ["freigabe@example.org"]
+  }
+
+  override_data {
+    target = data.azuredevops_group.contributors
+    values = {
+      descriptor = "vssgp.Y29udHJpYnV0b3Jz"
+    }
+  }
+
+  override_data {
+    target = data.azuredevops_group.project_administrators
+    values = {
+      descriptor = "vssgp.cHJvamVjdC1hZG1pbnM"
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      data.azuredevops_group.contributors[0].name == "Contributors",
+      data.azuredevops_group.contributors[0].project_id == "11111111-1111-1111-1111-111111111111",
+      data.azuredevops_group.project_administrators[0].name == "Project Administrators",
+      data.azuredevops_group.project_administrators[0].project_id == "11111111-1111-1111-1111-111111111111",
+    ])
+    error_message = "Contributors und Project Administrators sind Gruppen des Projekts, auch ohne protect_repository gesucht."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_group_membership.contributors[0].group == "vssgp.Y29udHJpYnV0b3Jz",
+      azuredevops_group_membership.contributors[0].members == toset(["aad.dXNlcg"]),
+      azuredevops_group_membership.contributors[0].mode == "add",
+      azuredevops_group_membership.project_administrators[0].group == "vssgp.cHJvamVjdC1hZG1pbnM",
+      azuredevops_group_membership.project_administrators[0].members == toset(["aad.dXNlcg"]),
+      azuredevops_group_membership.project_administrators[0].mode == "add",
+    ])
+    error_message = "Die genannten Personen werden Mitglied der Gruppen; weitere Mitglieder bleiben (mode add)."
+  }
+
+  assert {
+    condition     = length(azuredevops_git_permissions.repository) == 0
+    error_message = "contributors schaltet die Rechte am Repo nicht ein."
+  }
+}
+
+run "mitglied_unbekannt" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    contributors = ["unbekannt@example.org"]
+  }
+
+  override_data {
+    target = data.azuredevops_users.members
+    values = {
+      users = []
+    }
+  }
+
+  expect_failures = [data.azuredevops_users.members]
+}
+
+run "mitglieder_nur_principal_names" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    contributors           = ["Freigabe Person"]
+    project_administrators = ["freigabe@example.org", "keine mail"]
+  }
+
+  expect_failures = [var.contributors, var.project_administrators]
+}
+
+# So ruft das zentrale Scaffold das Modul auf.
+run "zentrales_scaffold_selbstbedienung" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_project            = true
+    create_repository         = false
+    create_service_connection = true
+    service_connection        = "sc-kundenportal"
+    service_connection_identity = {
+      tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+      subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+      subscription_name = "Seed Beispiel"
+      client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+    }
+    contributors           = ["freigabe@example.org"]
+    approver_groups        = ["Seed Infrastruktur-Freigabe"]
+    requester_can_approve  = false
+    create_resource_groups = false
+  }
+
+  assert {
+    condition     = length(azuredevops_project.this) == 1 && length(azuredevops_serviceendpoint_azurerm.this) == 1 && length(azuredevops_git_repository.this) == 0
+    error_message = "Neues Projekt mit eigener Service Connection, Repo vorhanden."
+  }
+
+  assert {
+    condition = alltrue([
+      length(azuredevops_check_branch_control.service_connection) == 1,
+      length(azuredevops_check_required_template.service_connection) == 1,
+      length(azuredevops_group_membership.contributors) == 1,
+      length(azuredevops_group_membership.project_administrators) == 0,
+    ])
+    error_message = "Checks an der Service Connection, die Person als Contributor, keine Projektadministratoren."
+  }
+
+  assert {
+    condition = alltrue([
+      alltrue([for c in azuredevops_check_approval.this : !c.requester_can_approve]),
+      one(azuredevops_branch_policy_min_reviewers.this).settings[0].reviewer_count == 1,
+      !one(azuredevops_branch_policy_min_reviewers.this).settings[0].submitter_can_vote,
+      one(azuredevops_branch_policy_min_reviewers.this).settings[0].last_pusher_cannot_approve,
+      one(azuredevops_branch_policy_min_reviewers.this).settings[0].on_push_reset_approved_votes,
+    ])
+    error_message = "Freigabe nicht durch die auslösende Person, ein Reviewer, die eigene Stimme zählt nicht."
+  }
+}
+
+run "project_yaml_mit_resource_groups_wie_bisher" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  assert {
+    condition     = !strcontains(azuredevops_git_repository_file.project_yaml.content, "createResourceGroups") && !contains(keys(yamldecode(azuredevops_git_repository_file.project_yaml.content)), "createResourceGroups")
+    error_message = "Standard: project.yaml ohne createResourceGroups, wie im Template."
+  }
+}
+
+run "project_yaml_ohne_resource_groups" {
+  command   = plan
+  state_key = "scaffold_files"
+
+  variables {
+    create_resource_groups = false
+    owner                  = "team@example.org"
+  }
+
+  assert {
+    condition     = yamldecode(azuredevops_git_repository_file.project_yaml.content).createResourceGroups == false
+    error_message = "create_resource_groups = false: createResourceGroups: false auf oberster Ebene von project.yaml."
+  }
+
+  assert {
+    condition = alltrue([
+      strcontains(azuredevops_git_repository_file.project_yaml.content, "# Die Resource Groups rg-<project>-<umgebung> legt das Scaffold vorab an"),
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).owner == "team@example.org",
+      yamldecode(azuredevops_git_repository_file.project_yaml.content).features.sso == false,
+    ])
+    error_message = "Mit Kommentar; owner und die übrigen Schlüssel bleiben."
+  }
+}
