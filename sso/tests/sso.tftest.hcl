@@ -171,8 +171,8 @@ run "verzeichnis_mit_presence_und_rollenfilter" {
   }
 
   assert {
-    condition     = azuread_service_principal.spa[0].app_role_assignment_required && azuread_service_principal.api[0].app_role_assignment_required
-    error_message = "Mit role_filter haben API und SPA die Zuweisungspflicht; sonst bekäme jedes Konto über die SPA ein Graph-Token."
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required
+    error_message = "Mit role_filter hat die SPA die Zuweisungspflicht; sonst bekäme jedes Konto über sie ein Graph-Token."
   }
 }
 
@@ -542,7 +542,7 @@ run "mcp_redirect_uris_loopback_mit_fremder_domain" {
   expect_failures = [var.mcp_redirect_uris]
 }
 
-run "verzeichnis_rollenfilter_ohne_zuweisung" {
+run "verzeichnis_rollenfilter_ohne_api_zuweisung" {
   command = plan
 
   variables {
@@ -550,18 +550,25 @@ run "verzeichnis_rollenfilter_ohne_zuweisung" {
     assignment_required = false
   }
 
-  expect_failures = [var.directory]
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required && !azuread_service_principal.api[0].app_role_assignment_required
+    error_message = "role_filter verlangt die Zuweisungspflicht nur an der SPA; die API darf ohne bleiben, etwa mit [AllowWithoutRole] und eigener Berechtigungsliste."
+  }
 }
 
-run "verzeichnis_service_principals_ohne_zuweisung" {
+run "verzeichnis_service_principals_ohne_api_zuweisung" {
   command = plan
 
   variables {
-    directory           = { enabled = true, service_principals = true }
-    assignment_required = false
+    directory               = { enabled = true, service_principals = true }
+    assignment_required     = false
+    spa_assignment_required = null
   }
 
-  expect_failures = [var.directory]
+  assert {
+    condition     = azuread_service_principal.spa[0].app_role_assignment_required && !azuread_service_principal.api[0].app_role_assignment_required
+    error_message = "service_principals schaltet die Zuweisungspflicht an der SPA ein (Default null) und lässt die API frei."
+  }
 }
 
 run "verzeichnis_rollenfilter_spa_ohne_zuweisung" {

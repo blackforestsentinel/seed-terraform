@@ -9,7 +9,7 @@
 # für die Berechtigung zulässt (README).
 
 variable "directory" {
-  description = "Personen-Komponenten im Frontend. enabled trägt die delegierten Graph-Berechtigungen User.Read, User.ReadBasic.All und People.Read an der SPA-Registrierung ein, presence zusätzlich Presence.Read.All (Teams-Status), role_filter Application.Read.All und GroupMember.Read.All (Personenauswahl nur mit App-Rolle, braucht Administratorzustimmung), service_principals Application.Read.All (Anwendungen und verwaltete Identitäten suchen und anzeigen, braucht Administratorzustimmung). role_filter und service_principals verlangen assignment_required = true und schalten spa_assignment_required ein (nicht false), denn sie gelten tenantweit für jedes Token der SPA. presence, role_filter und service_principals wirken nur mit enabled; enabled = false schaltet alles ab, etwa je Umgebung. frontend_config nennt die Scopes unter auth.directory. Bei existing_registration legt das Modul nichts an; die Ausgabe directory_permissions nennt, was der Admin des anderen Tenants einträgt."
+  description = "Personen-Komponenten im Frontend. enabled trägt die delegierten Graph-Berechtigungen User.Read, User.ReadBasic.All und People.Read an der SPA-Registrierung ein, presence zusätzlich Presence.Read.All (Teams-Status), role_filter Application.Read.All und GroupMember.Read.All (Personenauswahl nur mit App-Rolle, braucht Administratorzustimmung), service_principals Application.Read.All (Anwendungen und verwaltete Identitäten suchen und anzeigen, braucht Administratorzustimmung). role_filter und service_principals schalten spa_assignment_required ein und verlangen, dass es nicht false ist, denn sie gelten tenantweit für jedes Token der SPA; assignment_required an der API bleibt frei. presence, role_filter und service_principals wirken nur mit enabled; enabled = false schaltet alles ab, etwa je Umgebung. frontend_config nennt die Scopes unter auth.directory. Bei existing_registration legt das Modul nichts an; die Ausgabe directory_permissions nennt, was der Admin des anderen Tenants einträgt."
   type = object({
     enabled            = optional(bool, false)
     presence           = optional(bool, false)
@@ -22,10 +22,12 @@ variable "directory" {
   # role_filter und service_principals geben der SPA, einem öffentlichen Client, tenantweite
   # Leserechte auf Anwendungen, Rollenzuweisungen und Gruppenmitgliedschaften (README). Wer ein
   # Token für die SPA bekommt, kann sie direkt in Graph nutzen. Ein Graph-Token begrenzt nur die
-  # Zuweisungspflicht an der SPA (spa_assignment_required), die an der API gilt nur für ihre Tokens.
+  # Zuweisungspflicht an der SPA (spa_assignment_required); die an der API gilt nur für ihre Tokens
+  # und bleibt deshalb frei: Eine API ohne Zuweisungspflicht ([AllowWithoutRole], eigene
+  # Berechtigungsliste) darf die Personenauswahl trotzdem nutzen.
   validation {
-    condition     = !(var.directory.enabled && (var.directory.role_filter || var.directory.service_principals)) || (var.assignment_required == true && var.spa_assignment_required != false)
-    error_message = "directory.role_filter und directory.service_principals verlangen assignment_required = true und spa_assignment_required nicht false: Sie geben jedem Token der SPA tenantweit Application.Read.All bzw. GroupMember.Read.All (README, Personen und Profilbilder)."
+    condition     = !(var.directory.enabled && (var.directory.role_filter || var.directory.service_principals)) || var.spa_assignment_required != false
+    error_message = "directory.role_filter und directory.service_principals verlangen, dass spa_assignment_required nicht false ist: Sie geben jedem Token der SPA tenantweit Application.Read.All bzw. GroupMember.Read.All (README, Personen und Profilbilder)."
   }
 }
 
