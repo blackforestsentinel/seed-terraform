@@ -5,7 +5,7 @@
 # Entra ist der Autorisierungsserver. Dynamische Client-Registrierung kennt Entra nicht; deshalb
 # legt das Modul je Projekt und Umgebung eine Registrierung an, deren Client-ID man einmal im
 # Client einträgt. Tokens mit Scope mcp_access nimmt die API nur von Clients an, die das Modul
-# anlegt oder vorautorisiert (Auth__AllowedClientIds, main.tf), bei existing_registration von den
+# anlegt (Auth__AllowedClientIds, main.tf), bei existing_registration von den
 # dort genannten, nicht von jeder App mit Einwilligung; was jemand darf, prüfen die Werkzeuge über
 # Capabilities aus App-Rollen.
 
@@ -24,7 +24,7 @@ variable "mcp" {
 }
 
 variable "mcp_custom_domain" {
-  description = "Eigene Domain der Function für den MCP-Endpunkt, z. B. mcp.example.org; die Domain oder eine übergeordnete muss im Tenant verifiziert sein. Claude sendet die MCP-Adresse als resource (RFC 8707), und Entra stellt nur ein Token aus, wenn sie Application ID URI der API ist. Ohne Domain funktionieren nur Clients, die ohne resource anmelden, etwa VS Code (über mcp_preauthorized_client_ids). Hostname-Bindung und Zertifikat an der Function sind Handarbeit (README)."
+  description = "Eigene Domain der Function für den MCP-Endpunkt, z. B. mcp.example.org; die Domain oder eine übergeordnete muss im Tenant verifiziert sein. Claude sendet die MCP-Adresse als resource (RFC 8707), und Entra stellt nur ein Token aus, wenn sie Application ID URI der API ist. Ohne Domain funktionieren nur Clients, die ohne resource anmelden. Hostname-Bindung und Zertifikat an der Function sind Handarbeit (README)."
   type        = string
   default     = null
 
@@ -50,18 +50,6 @@ variable "mcp_redirect_uris" {
   }
 }
 
-variable "mcp_preauthorized_client_ids" {
-  description = "Weitere Clients mit eigener Entra-Registrierung, die mcp_access ohne Einwilligungsdialog bekommen; sie stehen auch in Auth__AllowedClientIds. Standard leer; bis v0.17.0 VS Code. VS Code (aebc6443-996d-45c2-90f0-388ff96faa56) meldet sich bei Entra immer mit seiner eigenen Registrierung an und kommt nur über diese Liste dazu. Ein vorautorisierter öffentlicher Client von Microsoft kann auch den Device-Code-Flow nutzen (README, Abschnitt MCP)."
-  type        = list(string)
-  nullable    = false
-  default     = []
-
-  validation {
-    condition     = alltrue([for id in var.mcp_preauthorized_client_ids : can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))])
-    error_message = "mcp_preauthorized_client_ids: jeweils eine Client-ID (GUID)."
-  }
-}
-
 locals {
   # Mit existing_registration gehört die API nicht der Pipeline: Scope, MCP-Client und
   # Vorautorisierung richtet dann der Admin im anderen Tenant ein (README).
@@ -79,9 +67,9 @@ locals {
     mcp_access = {
       id                         = local.mcp_scope_id
       admin_consent_display_name = "MCP-Zugriff auf ${local.base}"
-      admin_consent_description  = "Erlaubt einem MCP-Client wie Claude oder VS Code, im Namen der angemeldeten Person die Werkzeuge von ${local.base} aufzurufen. Gilt nur für den MCP-Endpunkt, nicht für die übrige API."
+      admin_consent_description  = "Erlaubt einem MCP-Client wie Claude, im Namen der angemeldeten Person die Werkzeuge von ${local.base} aufzurufen. Gilt nur für den MCP-Endpunkt, nicht für die übrige API."
       user_consent_display_name  = "MCP-Zugriff auf ${local.base}"
-      user_consent_description   = "Erlaubt einem KI-Werkzeug wie Claude oder VS Code, in deinem Namen die Werkzeuge von ${local.base} aufzurufen."
+      user_consent_description   = "Erlaubt einem KI-Werkzeug wie Claude, in deinem Namen die Werkzeuge von ${local.base} aufzurufen."
     }
   } : {}
 
@@ -157,14 +145,6 @@ resource "azuread_application_pre_authorized" "mcp" {
 
   application_id       = azuread_application.api[0].id
   authorized_client_id = azuread_application.mcp[0].client_id
-  permission_ids       = [local.mcp_scope_id]
-}
-
-resource "azuread_application_pre_authorized" "mcp_clients" {
-  for_each = local.mcp_create ? toset(var.mcp_preauthorized_client_ids) : toset([])
-
-  application_id       = azuread_application.api[0].id
-  authorized_client_id = each.value
   permission_ids       = [local.mcp_scope_id]
 }
 

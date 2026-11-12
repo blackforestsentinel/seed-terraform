@@ -715,13 +715,12 @@ run "vorhandene_registrierung_mit_zugelassenen_clients" {
     mcp                           = true
     additional_allowed_client_ids = ["CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC", "66666666-6666-6666-6666-666666666666"]
     existing_registration = {
-      tenant_id                    = "44444444-4444-4444-4444-444444444444"
-      api_client_id                = "55555555-5555-5555-5555-555555555555"
-      spa_client_id                = "66666666-6666-6666-6666-666666666666"
-      api_scope                    = "api://55555555-5555-5555-5555-555555555555/access_as_user"
-      connector_client_id          = "88888888-8888-8888-8888-888888888888"
-      mcp_client_id                = "99999999-9999-9999-9999-999999999999"
-      mcp_preauthorized_client_ids = ["AEBC6443-996D-45C2-90F0-388FF96FAA56"]
+      tenant_id           = "44444444-4444-4444-4444-444444444444"
+      api_client_id       = "55555555-5555-5555-5555-555555555555"
+      spa_client_id       = "66666666-6666-6666-6666-666666666666"
+      api_scope           = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+      connector_client_id = "88888888-8888-8888-8888-888888888888"
+      mcp_client_id       = "99999999-9999-9999-9999-999999999999"
     }
   }
 
@@ -730,14 +729,13 @@ run "vorhandene_registrierung_mit_zugelassenen_clients" {
       Auth__AllowedClientIds__0 = "66666666-6666-6666-6666-666666666666"
       Auth__AllowedClientIds__1 = "88888888-8888-8888-8888-888888888888"
       Auth__AllowedClientIds__2 = "99999999-9999-9999-9999-999999999999"
-      Auth__AllowedClientIds__3 = "aebc6443-996d-45c2-90f0-388ff96faa56"
-      Auth__AllowedClientIds__4 = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+      Auth__AllowedClientIds__3 = "cccccccc-cccc-cccc-cccc-cccccccccccc"
     }
-    error_message = "Mit existing_registration: SPA, Connector-Client, MCP-Client, vorautorisierte Clients und weitere Clients aus dem anderen Tenant, klein geschrieben und ohne Doppelte."
+    error_message = "Mit existing_registration: SPA, Connector-Client, MCP-Client und weitere Clients aus dem anderen Tenant, klein geschrieben und ohne Doppelte."
   }
 
   assert {
-    condition     = length(azuread_application.connector) + length(azuread_application.mcp) + length(azuread_application_pre_authorized.mcp_clients) == 0
+    condition     = length(azuread_application.connector) + length(azuread_application.mcp) == 0
     error_message = "Mit existing_registration legt das Modul weder Connector- noch MCP-Client an."
   }
 
@@ -752,13 +750,12 @@ run "vorhandene_registrierung_clients_nur_mit_schalter" {
 
   variables {
     existing_registration = {
-      tenant_id                    = "44444444-4444-4444-4444-444444444444"
-      api_client_id                = "55555555-5555-5555-5555-555555555555"
-      spa_client_id                = "66666666-6666-6666-6666-666666666666"
-      api_scope                    = "api://55555555-5555-5555-5555-555555555555/access_as_user"
-      connector_client_id          = "88888888-8888-8888-8888-888888888888"
-      mcp_client_id                = "99999999-9999-9999-9999-999999999999"
-      mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
+      tenant_id           = "44444444-4444-4444-4444-444444444444"
+      api_client_id       = "55555555-5555-5555-5555-555555555555"
+      spa_client_id       = "66666666-6666-6666-6666-666666666666"
+      api_scope           = "api://55555555-5555-5555-5555-555555555555/access_as_user"
+      connector_client_id = "88888888-8888-8888-8888-888888888888"
+      mcp_client_id       = "99999999-9999-9999-9999-999999999999"
     }
   }
 
@@ -900,50 +897,20 @@ run "mcp_zugelassene_clients" {
       Auth__AllowedClientIds__0 = "33333333-3333-3333-3333-333333333333"
       Auth__AllowedClientIds__1 = "99999999-9999-9999-9999-999999999999"
     }
-    error_message = "Mit mcp sind SPA und MCP-Client zugelassen; VS Code ab v0.18.0 nur auf Wunsch."
+    error_message = "Mit mcp sind SPA und MCP-Client zugelassen, kein Client von Microsoft."
   }
 
   assert {
-    condition     = length(azuread_application_pre_authorized.mcp_clients) == 0 && length(azuread_application_pre_authorized.mcp) == 1
-    error_message = "Standard: nur der eigene MCP-Client ist für mcp_access vorautorisiert, kein Client von Microsoft."
+    condition     = length(azuread_application_pre_authorized.mcp) == 1 && azuread_application_pre_authorized.mcp[0].authorized_client_id == azuread_application.mcp[0].client_id
+    error_message = "Nur der eigene MCP-Client ist für mcp_access vorautorisiert; andere Clients autorisiert das Modul nicht vor (Device-Code-Flow)."
   }
-}
-
-run "mcp_mit_vs_code" {
-  variables {
-    mcp                          = true
-    mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
-  }
-
-  override_resource {
-    target = azuread_application.mcp
-    values = {
-      client_id = "99999999-9999-9999-9999-999999999999"
-    }
-  }
-
-  assert {
-    condition     = output.app_settings.Auth__AllowedClientIds__2 == "aebc6443-996d-45c2-90f0-388ff96faa56" && azuread_application_pre_authorized.mcp_clients["aebc6443-996d-45c2-90f0-388ff96faa56"].permission_ids == toset([for s in azuread_application.api[0].api[0].oauth2_permission_scope : s.id if s.value == "mcp_access"])
-    error_message = "VS Code als Opt-in: vorautorisiert nur für mcp_access und zugelassen."
-  }
-}
-
-run "mcp_vorautorisierte_clients_nur_guids" {
-  command = plan
-
-  variables {
-    mcp                          = true
-    mcp_preauthorized_client_ids = ["vscode"]
-  }
-
-  expect_failures = [var.mcp_preauthorized_client_ids]
 }
 
 run "zugelassene_clients_reihenfolge" {
   variables {
-    connector                    = true
-    mcp                          = true
-    mcp_preauthorized_client_ids = ["F0F0F0F0-0000-0000-0000-000000000001", "0a0a0a0a-0000-0000-0000-000000000002"]
+    connector                     = true
+    mcp                           = true
+    additional_allowed_client_ids = ["F0F0F0F0-0000-0000-0000-000000000001", "0a0a0a0a-0000-0000-0000-000000000002"]
   }
 
   override_resource {
@@ -968,7 +935,7 @@ run "zugelassene_clients_reihenfolge" {
       Auth__AllowedClientIds__3 = "0a0a0a0a-0000-0000-0000-000000000002"
       Auth__AllowedClientIds__4 = "f0f0f0f0-0000-0000-0000-000000000001"
     }
-    error_message = "Reihenfolge: SPA, Connector, MCP-Client, dann die vorautorisierten Clients sortiert und klein geschrieben; VS Code nur, wenn es in der Liste steht."
+    error_message = "Reihenfolge: SPA, Connector, MCP-Client, dann additional_allowed_client_ids sortiert und klein geschrieben."
   }
 
   assert {
@@ -989,9 +956,9 @@ run "zugelassene_clients_im_plan_bekannt" {
   state_key = "plan"
 
   variables {
-    connector                    = true
-    mcp                          = true
-    mcp_preauthorized_client_ids = ["aebc6443-996d-45c2-90f0-388ff96faa56"]
+    connector                     = true
+    mcp                           = true
+    additional_allowed_client_ids = ["AAAAAAAA-0000-0000-0000-000000000001"]
   }
 
   assert {
@@ -1003,8 +970,8 @@ run "zugelassene_clients_im_plan_bekannt" {
   }
 
   assert {
-    condition     = output.app_settings.Auth__AllowedClientIds__3 == "aebc6443-996d-45c2-90f0-388ff96faa56"
-    error_message = "Vorautorisierte Clients sind schon im Plan bekannt."
+    condition     = output.app_settings.Auth__AllowedClientIds__3 == "aaaaaaaa-0000-0000-0000-000000000001"
+    error_message = "Weitere Clients sind schon im Plan bekannt, klein geschrieben."
   }
 }
 
