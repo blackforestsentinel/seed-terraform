@@ -173,15 +173,16 @@ resource "azuread_application_pre_authorized" "spa" {
 
 locals {
   # Delegierte Tokens nimmt die API nur von diesen Clients an (azp bzw. appid im Token): von den
-  # Registrierungen, die das Modul anlegt (SPA, Custom Connector, MCP-Clients), und von den
-  # Clients, die es für mcp_access vorautorisiert (mcp_preauthorized_client_ids). Eine fremde App,
+  # Registrierungen, die das Modul anlegt (SPA, Custom Connector, MCP-Clients). Eine fremde App,
   # der jemand zugestimmt hat, kommt damit nicht durch. Mit existing_registration stehen an ihrer
   # Stelle die Client-IDs aus existing_registration (existing.tf). Dazu jeweils
-  # additional_allowed_client_ids.
+  # additional_allowed_client_ids. Andere Clients autorisiert das Modul seit v0.19.0 nicht mehr
+  # vor: Ein öffentlicher Client von Microsoft (etwa VS Code) ließe sich im Device-Code-Flow für
+  # Phishing nutzen (README, Abschnitt MCP).
   #
   # Feste Reihenfolge statt alles sortiert: Die Client-ID einer neuen Registrierung kennt erst
   # der Apply, eine sortierte Liste wäre im Plan ganz unbekannt und mit ihr alle App-Settings der
-  # Function. Die eigenen Registrierungen sind je höchstens eine, die vorautorisierten Clients
+  # Function. Die eigenen Registrierungen sind je höchstens eine, additional_allowed_client_ids
   # folgen sortiert, ohne Doppelte und klein geschrieben wie azp. Mit existing_registration ist
   # alles schon im Plan bekannt; die SPA steht auch dann vorn, additional_allowed_client_ids
   # sperren sie also nicht aus.
@@ -191,13 +192,11 @@ locals {
     azuread_application.spa[*].client_id,
     azuread_application.connector[*].client_id,
     azuread_application.mcp[*].client_id,
-    sort(distinct([for p in values(azuread_application_pre_authorized.mcp_clients) : lower(p.authorized_client_id)])),
     sort(distinct([for id in var.additional_allowed_client_ids : lower(id)])),
   )
 
   allowed_client_ids_existing = distinct(concat(
     local.existing_own_client_ids,
-    sort(distinct([for id in local.existing_preauthorized_client_ids : lower(id)])),
     sort(distinct([for id in var.additional_allowed_client_ids : lower(id)])),
   ))
 
