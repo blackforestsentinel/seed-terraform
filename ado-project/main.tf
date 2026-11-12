@@ -453,11 +453,12 @@ locals {
   )
 
   # Die Branch-Prüfung vergleicht jedes Repo des Laufs mit derselben Liste, auch seed-pipelines,
-  # das die Pipeline am Tag pipelines_version einbindet.
-  service_connection_allowed_refs = ["refs/heads/main", "refs/tags/${var.pipelines_version}"]
+  # das die Pipeline an einem Tag v... einbindet; welcher Tag es sein muss, pinnt der
+  # Required-Template-Check. Dieselbe Liste wie in den Onboarding-Skripten von seed-pipelines.
+  service_connection_allowed_refs = ["refs/heads/main", "refs/tags/v*"]
 }
 
-# Nur Läufe von main (und seed-pipelines am eingebundenen Tag) bekommen die Identität.
+# Nur Läufe von main (und seed-pipelines an einem Release-Tag) bekommen die Identität.
 resource "azuredevops_check_branch_control" "service_connection" {
   count = var.create_service_connection ? 1 : 0
 

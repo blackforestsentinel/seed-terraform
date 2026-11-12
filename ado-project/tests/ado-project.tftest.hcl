@@ -677,7 +677,7 @@ run "eigene_service_connection" {
     condition = alltrue([
       azuredevops_check_branch_control.service_connection[0].target_resource_id == "dddddddd-dddd-dddd-dddd-dddddddddddd",
       azuredevops_check_branch_control.service_connection[0].target_resource_type == "endpoint",
-      azuredevops_check_branch_control.service_connection[0].allowed_branches == "refs/heads/main,refs/tags/v0.20.0",
+      azuredevops_check_branch_control.service_connection[0].allowed_branches == "refs/heads/main,refs/tags/v*",
       azuredevops_check_branch_control.service_connection[0].verify_branch_protection == false,
       azuredevops_check_branch_control.service_connection[0].ignore_unknown_protection_status == false,
       azuredevops_check_branch_control.service_connection[0].timeout == null,
