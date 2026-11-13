@@ -64,13 +64,13 @@ variable "approvers" {
 }
 
 variable "approver_groups" {
-  description = "Gruppen der Organisation (Name), deren Mitglieder Infrastruktur-Änderungen ebenfalls freigeben, zusätzlich zu approvers. Im zentralen Scaffold eine feste Gruppe, damit nicht jede Person ihre eigene Infrastruktur allein freigibt."
+  description = "Gruppen der Organisation (Name), deren Mitglieder Infrastruktur-Änderungen ebenfalls freigeben, zusätzlich zu approvers. Im zentralen Scaffold optional eine feste Gruppe aus dem Onboarding (Teams)."
   type        = list(string)
   default     = []
 }
 
 variable "requester_can_approve" {
-  description = "Darf die Person, die einen Lauf ausgelöst hat, dessen Infrastruktur-Änderung selbst freigeben? Im zentralen Scaffold false."
+  description = "Darf die Person, die einen Lauf ausgelöst hat, dessen Infrastruktur-Änderung selbst freigeben? Im zentralen Scaffold wählt es die startende Person beim Start."
   type        = bool
   default     = true
 }
