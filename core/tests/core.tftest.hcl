@@ -22,7 +22,7 @@ run "ohne_owner_wie_bisher" {
   command = plan
 
   assert {
-    condition = azurerm_resource_group.this.tags == tomap({
+    condition = azurerm_resource_group.this[0].tags == tomap({
       "seed:project"     = "example"
       "seed:environment" = "dev"
       "seed:module"      = "core"
@@ -46,7 +46,7 @@ run "owner_an_allen_ressourcen" {
   assert {
     condition = alltrue([
       for tags in [
-        azurerm_resource_group.this.tags,
+        azurerm_resource_group.this[0].tags,
         azurerm_log_analytics_workspace.this.tags,
         azurerm_application_insights.this.tags,
         azurerm_storage_account.host.tags,
@@ -60,7 +60,7 @@ run "owner_an_allen_ressourcen" {
   }
 
   assert {
-    condition     = azurerm_resource_group.this.tags["seed:module"] == "core"
+    condition     = azurerm_resource_group.this[0].tags["seed:module"] == "core"
     error_message = "Die Seed-Tags bleiben neben owner erhalten."
   }
 }
@@ -74,7 +74,7 @@ run "owner_geht_tags_vor" {
   }
 
   assert {
-    condition     = azurerm_resource_group.this.tags["owner"] == "team@example.org" && azurerm_resource_group.this.tags["kostenstelle"] == "4711"
+    condition     = azurerm_resource_group.this[0].tags["owner"] == "team@example.org" && azurerm_resource_group.this[0].tags["kostenstelle"] == "4711"
     error_message = "owner geht einem Tag owner aus tags vor, weitere Tags bleiben."
   }
 }
@@ -89,7 +89,7 @@ run "owner_ersetzt_tag_in_anderer_schreibweise" {
   }
 
   assert {
-    condition = azurerm_resource_group.this.tags == tomap({
+    condition = azurerm_resource_group.this[0].tags == tomap({
       "seed:project"     = "example"
       "seed:environment" = "dev"
       "seed:module"      = "core"
@@ -109,7 +109,7 @@ run "owner_leer_wie_null" {
   }
 
   assert {
-    condition     = !contains(keys(azurerm_resource_group.this.tags), "owner") && azurerm_resource_group.this.tags["Owner"] == "alt@example.org"
+    condition     = !contains(keys(azurerm_resource_group.this[0].tags), "owner") && azurerm_resource_group.this[0].tags["Owner"] == "alt@example.org"
     error_message = "Ein leerer owner wirkt wie null: kein Tag owner, tags bleiben unverändert."
   }
 }
@@ -171,4 +171,88 @@ run "cors_origin_null_abgelehnt" {
   }
 
   expect_failures = [var.cors_allowed_origins]
+}
+
+run "resource_group_wie_bisher" {
+  command = plan
+
+  assert {
+    condition     = length(azurerm_resource_group.this) == 1 && length(data.azurerm_resource_group.existing) == 0
+    error_message = "Standard: Das Modul legt die Resource Group an und sucht keine vorhandene."
+  }
+
+  assert {
+    condition     = azurerm_resource_group.this[0].name == "rg-example-dev" && output.resource_group_name == "rg-example-dev"
+    error_message = "Die Resource Group heißt rg-<name>-<environment>."
+  }
+
+  assert {
+    condition     = azurerm_log_analytics_workspace.this.resource_group_name == "rg-example-dev" && azurerm_static_web_app.this[0].resource_group_name == "rg-example-dev"
+    error_message = "Die Ressourcen liegen in der Resource Group des Moduls."
+  }
+}
+
+# Das zentrale Scaffold legt rg-<name>-<environment> vorab an; die Projekt-Pipeline darf sie dann
+# nicht neu anlegen.
+run "resource_group_vorhanden" {
+  command = plan
+
+  variables {
+    create_resource_group = false
+    owner                 = "team@example.org"
+  }
+
+  override_data {
+    target = data.azurerm_resource_group.existing
+    values = {
+      id       = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-example-dev"
+      location = "westeurope"
+    }
+  }
+
+  assert {
+    condition     = length(azurerm_resource_group.this) == 0 && data.azurerm_resource_group.existing[0].name == "rg-example-dev"
+    error_message = "create_resource_group = false: keine Resource Group anlegen, die vorhandene unter demselben Namen lesen."
+  }
+
+  assert {
+    condition = alltrue([
+      azurerm_log_analytics_workspace.this.resource_group_name == "rg-example-dev",
+      azurerm_application_insights.this.resource_group_name == "rg-example-dev",
+      azurerm_storage_account.host.resource_group_name == "rg-example-dev",
+      azurerm_user_assigned_identity.function.resource_group_name == "rg-example-dev",
+      azurerm_service_plan.this.resource_group_name == "rg-example-dev",
+      azurerm_static_web_app.this[0].resource_group_name == "rg-example-dev",
+      azapi_resource.function_app.parent_id == "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-example-dev",
+    ])
+    error_message = "Alle Ressourcen landen in der vorhandenen Resource Group, die Function App über deren ID."
+  }
+
+  assert {
+    condition     = output.resource_group_name == "rg-example-dev" && output.resource_group_id == "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-example-dev"
+    error_message = "Name und ID der vorhandenen Resource Group stehen in den Outputs, etwa für das Budget im Modul monitoring."
+  }
+
+  assert {
+    condition     = azurerm_log_analytics_workspace.this.location == "westeurope" && azurerm_log_analytics_workspace.this.tags["owner"] == "team@example.org"
+    error_message = "Region und Tags der übrigen Ressourcen bleiben wie bisher."
+  }
+}
+
+run "resource_group_vorhanden_andere_region" {
+  command = plan
+
+  variables {
+    create_resource_group = false
+  }
+
+  override_data {
+    target = data.azurerm_resource_group.existing
+    values = {
+      id       = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-example-dev"
+      location = "northeurope"
+    }
+  }
+
+  expect_failures = [check.resource_group_location]
 }

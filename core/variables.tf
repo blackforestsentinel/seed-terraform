@@ -144,3 +144,10 @@ variable "owner" {
     error_message = "owner: eine E-Mail-Adresse, z. B. team@example.org, oder leer."
   }
 }
+
+variable "create_resource_group" {
+  description = "Resource Group rg-<name>-<environment> anlegen (Standard). false: Es gibt sie schon, etwa weil das zentrale Scaffold sie vorab anlegt und der Identität des Projekts nur dort Rollen gibt; das Modul liest sie dann nur und ändert weder sie noch ihre Tags. Im Template createResourceGroups in project.yaml."
+  type        = bool
+  default     = true
+  nullable    = false
+}

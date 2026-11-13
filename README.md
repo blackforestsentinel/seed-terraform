@@ -17,12 +17,12 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 
 | Modul | Inhalt | Status |
 | --- | --- | --- |
-| `core` | Resource Group, Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights und Log Analytics (Tageslimit) ohne lokale Authentifizierung, Host-Storage mit Managed Identity | Phase 1 |
+| `core` | Resource Group (neu oder vorhanden), Static Web App (Free oder Standard, mit eigenen Domains; entfällt bei Projekten ohne Frontend), Function App (Flex Consumption, .NET 10), Application Insights und Log Analytics (Tageslimit) ohne lokale Authentifizierung, Host-Storage mit Managed Identity | Phase 1 |
 | `sso` | App-Registrierungen für API und SPA (ohne Frontend nur API), delegierte Berechtigung `access_as_user`, SPA vorab autorisiert, Liste der zugelassenen Clients für `Bfs.Seed.Auth`, App-Rollen, Bridge-Seite für die stille Anmeldung; alternativ eine vorhandene Registrierung, auch aus einem anderen Tenant; mit `mcp` Scope `mcp_access` und Client-Registrierung für MCP-Clients; mit `connector` Client-Registrierung für einen Power-Platform-Custom-Connector (ohne Secret); mit `directory` delegierte Graph-Berechtigungen für die Personen-Komponenten im Frontend | Phase 2 |
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs, Ablauf von Secrets im Key Vault) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, URI des Vaults als `Seed__KeyVaultUri`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
-| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer, eingeschränkte Rechte am Repo (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an | Phase 3 |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer, eingeschränkte Rechte am Repo (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an; ab v0.20.0 optional neues Projekt, eigene Service Connection je Projekt mit Checks und Mitglieder | Phase 3 |
 
 ### Besitzer (`owner`)
 
@@ -50,7 +50,17 @@ Umstieg: Kommt `owner` dazu, ändert der nächste Apply die Tags an Ort und Stel
 
 Das Modul legt keine Schlüssel an: Die Function greift per User-Assigned Managed Identity auf ihren Host-Storage zu, Shared-Key-Zugriff ist abgeschaltet. Basic Auth für Deployments (SCM, FTP) ist aus, Deployments laufen über Entra ID. Die Function App entsteht per `azapi`, weil die azurerm-Ressource für Flex Consumption dabei fehlerhafte App-Settings setzt ([#29149](https://github.com/hashicorp/terraform-provider-azurerm/issues/29149), [#33211](https://github.com/hashicorp/terraform-provider-azurerm/issues/33211)).
 
-Die ausführende Identität braucht `Contributor` und `Role Based Access Control Administrator` (oder `User Access Administrator`) auf der Subscription.
+Die ausführende Identität braucht `Contributor` und `Role Based Access Control Administrator` (oder `User Access Administrator`) auf der Subscription. Mit `create_resource_group = false` genügen beide auf der Resource Group des Projekts (unten).
+
+#### Resource Group (`create_resource_group`)
+
+Die Resource Group heißt `rg-<name>-<environment>`, also `rg-` + `name` (Projektname aus `project.yaml`) + `-` + `environment`, etwa `rg-kundenportal-dev`. Alle Ressourcen des Moduls liegen darin.
+
+Ab v0.20.0 kann es sie schon geben: Mit `create_resource_group = false` (Standard `true`) legt das Modul sie nicht an, sondern liest sie unter genau diesem Namen (`data "azurerm_resource_group"`) und nutzt Name und ID wie bisher. Gedacht für das zentrale Scaffold mit einer Identität je Projekt: Es legt `rg-<name>-<environment>` vorab an und gibt der Identität des Projekts Rollen nur darauf, die Projekt-Pipeline legt sie dann nicht neu an. Wer die Resource Group anlegt, muss den Namen exakt so bilden. Im Template steuert das `createResourceGroups` in `project.yaml` (Modul `ado-project`, `create_resource_groups`).
+
+Mit `false` ändert das Modul weder die Resource Group noch ihre Tags; Tags wie `seed:project` und `seed:environment` setzt, wer sie anlegt. Die übrigen Ressourcen entstehen weiter in `location` und bekommen ihre Tags wie bisher. Liegt die vorhandene Resource Group in einer anderen Region, warnt der Plan (Check `resource_group_location`).
+
+Umstieg: Mit dem Standard bleibt alles, wie es ist; der erste Plan nach dem Update verschiebt die Resource Group im State nach `azurerm_resource_group.this[0]` (`moved`), ohne Änderung in Azure. `false` ist für neue Projekte gedacht. Ein bestehendes Projekt, dessen Resource Group Terraform verwaltet, plante sonst ihr Löschen; dort vorher `terraform state rm 'module.core.azurerm_resource_group.this[0]'`.
 
 Provider-Einstellungen im aufrufenden Projekt:
 
@@ -63,7 +73,7 @@ provider "azurerm" {
 provider "azapi" {}
 ```
 
-Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default), `owner` (Tag `owner`, siehe [Besitzer](#besitzer-owner)), `tags`.
+Wichtige Eingaben: `name`, `environment`, `location` (Default `westeurope`), `static_web_app_sku` (`Free`, `Standard` oder `None`; Azure erlaubt höchstens 10 Free-SWAs je Subscription), `custom_domains` (eigene Domains der Static Web App), `app_settings` (zusätzliche App-Settings, z. B. aus dem sso-Modul), `cors_allowed_origins`, `log_daily_quota_gb` (Tageslimit für Logs, Default 1 GB), `maximum_instance_count` (Obergrenze der Instanzen, 1 bis 1000, Default 40; `null` gilt als Default), `owner` (Tag `owner`, siehe [Besitzer](#besitzer-owner)), `tags`, `create_resource_group` (Standard `true`, siehe oben).
 
 Wichtige Ausgaben: `function_app_name`, `function_app_url`, `static_web_app_name`, `static_web_app_url`, `custom_domain_dns_records`, `function_identity_principal_id`; für das Modul monitoring `resource_group_id`, `application_insights_id` und `log_analytics_workspace_id`.
 
@@ -332,6 +342,44 @@ Die anlegende Identität braucht dafür am Repo „Manage permissions“, und si
 Umstieg: Der erste Plan nach dem Update zeigt zwei neue Ressourcen `azuredevops_git_permissions.repository`, ohne Änderung an Repo, Pipeline oder Policies.
 
 **Werte in `azure-pipelines.yml`:** Ab v0.18.0 prüft das Modul alle Werte, die es in die erzeugte Pipeline schreibt, damit ein Zeilenumbruch oder `: ` das YAML nicht umschreibt (etwa `confirmDataDeletion: true` setzen oder ein Repo ergänzen): `pipelines_version` ist ein Release-Tag (`vX.Y.Z`), `service_connection`, `github_connection` und `pool` bestehen aus Buchstaben, Ziffern, `.`, `_`, `-` und Leerzeichen, `environments` aus Kleinbuchstaben, Ziffern und `-`, `terraform_state` aus gültigen Namen für Resource Group, Storage Account und Container.
+
+#### Selbstbedienung: Identität je Projekt (ab v0.20.0)
+
+Zielbild: Jedes Seed-Projekt hat eine eigene Deployment-Identität, eine User-Assigned Managed Identity `id-<name>` hinter der Service Connection `sc-<name>` im Zielprojekt (Workload Identity Federation). Sie hat Rollen nur auf den Resource Groups `rg-<name>-<env>` und darf im State-Container nur unter dem Pfad `<name>/` schreiben. Was ein Projekt mit seiner Identität anrichten kann, bleibt so im Projekt. Das zentrale Scaffold ist ein Makler: Es führt nie Code der Person aus und berechtigt die Pipeline erst, wenn die Leitplanken stehen. Reihenfolge eines Laufs:
+
+1. Prüfen: Eingaben, Zielprojekt, Mitgliedschaft der Person, Name frei; bei einem neuen Repo enthält `main` nur README, LICENSE oder `.gitignore`.
+2. Identität in Azure: `id-<name>`, Resource Groups `rg-<name>-<env>`, Rollen darauf, Schreibrecht im State-Container nur für `<name>/`.
+3. seed-template am Tag als ein Commit nach `main`; danach `project.yaml` und `azure-pipelines.yml` über dieses Modul.
+4. Dieses Modul: Service Connection `sc-<name>` mit Branch-Prüfung und Required-Template-Check, Environments mit Freigaben, Reviewer-Policy (mindestens eine Person, die eigene Stimme zählt nicht), PR-Validierung, Rechte am Repo; `requester_can_approve = false`. Mit den Outputs `workload_identity_federation_issuer` und `workload_identity_federation_subject` legt der Aufrufer danach das Federated Credential an `id-<name>` an.
+5. Verifizieren: `main` zeigt auf den Commit aus Schritt 3 und die Commits des Moduls, kein fremder Push dazwischen; sonst Abbruch.
+6. Pipeline für `sc-<name>` und die Environments berechtigen, ersten Lauf starten.
+
+Innerhalb des Moduls entsteht die eigene Service Connection erst nach Dateien, Branch-Policies und Rechten am Repo, und die Pipeline wird erst für sie berechtigt, wenn beide Checks daran stehen.
+
+Neue Eingaben, alle optional; die Standardwerte entsprechen dem Verhalten bis v0.19.0:
+
+| Variable | Typ, Standard | Wirkung |
+| --- | --- | --- |
+| `create_project` | `bool`, `false` | Projekt `ado_project` neu anlegen: privat, Git, Prozess wie Provider-Standard, nur Repos und Pipelines eingeschaltet. |
+| `project_description` | `string`, `null` | Beschreibung des neuen Projekts. |
+| `create_service_connection` | `bool`, `false` | Azure-Service-Connection `service_connection` selbst anlegen, Workload Identity Federation manuell (ohne Secret, ohne Prüfung beim Anlegen), mit Checks. `false`: eine vorhandene wie bisher. |
+| `service_connection_identity` | `object({ tenant_id, subscription_id, subscription_name, client_id })`, `null` | Identität hinter der eigenen Service Connection; `client_id` der Managed Identity `id-<name>`. Mit `create_service_connection` Pflicht. |
+| `required_template_repository` | `string`, `"blackforestsentinel/seed-pipelines"` | GitHub-Repo (Besitzer/Name), dessen `templates/web-app.yml` der Required-Template-Check verlangt; für Forks. |
+| `contributors` | `list(string)`, `[]` | Principal Names, die Mitglied der Gruppe Contributors des Projekts werden. |
+| `project_administrators` | `list(string)`, `[]` | Principal Names, die Mitglied der Gruppe Project Administrators werden (Warnung unten). |
+| `create_resource_groups` | `bool`, `true` | `false` schreibt `createResourceGroups: false` in `project.yaml`: Die Resource Groups legt das Scaffold vorab an (Modul `core`, `create_resource_group`). |
+
+Neue Ausgaben: `service_connection_id` (eigene oder vorhandene, sonst leer), `workload_identity_federation_issuer` und `workload_identity_federation_subject` (nur mit `create_service_connection`, sonst leer). `project_id` gibt es schon, mit `create_project` ist es die ID des neuen Projekts.
+
+- **Neues Projekt:** Die anlegende Identität braucht in der Organisation „Create new projects“ und wird Projektadministrator des neuen Projekts. Dessen Standard-Repo ist leer, und unter „Protect access to repositories in YAML pipelines“ sieht ein Job-Token es nicht und kann es nicht befüllen. Das Scaffold legt das Repo deshalb nicht per Terraform an (`create_repository = false`): Die Person klickt in Repos auf „Initialize“, danach richtet ein weiterer Lauf mit demselben State alles ein. Das Modul löscht ein angelegtes Projekt nie (`prevent_destroy`); Beschreibung und Features pflegt danach das Projekt.
+- **Checks an der eigenen Service Connection:** Branch control lässt `refs/heads/main` und `refs/tags/v*` zu, wie in den Onboarding-Skripten von seed-pipelines: Die Prüfung vergleicht jedes Repo des Laufs mit derselben Liste, auch seed-pipelines, das die Pipeline an einem Release-Tag einbindet. Ohne Prüfung des Branch-Schutzes, Timeout wie Provider-Standard. Required template verlangt `templates/web-app.yml` aus `required_template_repository` am Ref `refs/tags/<pipelines_version>`. Eine neue Version von seed-pipelines braucht deshalb einen weiteren Lauf des Moduls mit der neuen `pipelines_version` (oder einen zweiten Eintrag im Check, wie ihn die Onboarding-Skripte setzen); bis dahin weist der Required-Template-Check Läufe von `main` mit dem neuen Tag ab.
+- **GitHub-Service-Connection:** bleibt eine vorhandene (`github_connection`); das zentrale Scaffold teilt sie aus seinem Projekt ins Zielprojekt, bevor das Modul läuft.
+- **Mitglieder:** `contributors` und `project_administrators` kommen zu den Gruppen dazu; weitere Mitglieder bleiben. Die Konten müssen Mitglieder der Organisation sein, sonst bricht der Plan mit einer Meldung ab. **Vorsicht mit `project_administrators`:** Ein Projektadministrator kann Branch-Policies, Rechte am Repo, Checks und Freigaben seines Projekts aufheben, und damit unreviewten Code mit der Identität des Projekts ausführen. Standard ist deshalb niemand aus dem Team.
+- **Reviewer und Freigaben:** `min_reviewers` bleibt standardmäßig `1`, die eigene Stimme zählt nicht (`submitter_can_vote = false`), neue Pushes setzen Zustimmungen zurück. `requester_can_approve` bleibt eine Variable mit Standard `true`; das zentrale Scaffold übergibt `false`.
+- **State:** `web-app.yml` legt den State jedes Projekts unter `<project>/<env>.tfstate` ab. Die Identität des Projekts darf im State-Container nur Blobs unter `<name>/` schreiben; die Bedingung an der Rolle setzt, wer die Identität anlegt.
+- **Grenzen der Identität:** Im Zielbild bearbeitet sie keine anderen Resource Groups, keine fremden States und App-Registrierungen und vergibt keine Rollen außerhalb der Seed-Rollen; das legen die Rollen fest, die der Aufrufer vergibt. Projekte mit Custom Connector brauchen den Anwendungsbenutzer in der Power-Platform-Umgebung für ihre eigene Identität (Onboarding in seed-pipelines).
+
+Umstieg: Bestehende Aufrufe laufen unverändert weiter; der erste Plan nach dem Update zeigt keine Änderung.
 
 #### MCP
 
