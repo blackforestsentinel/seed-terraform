@@ -22,7 +22,7 @@ Alle Module eines Releases teilen sich einen Tag (`vX.Y.Z`). Projekte pinnen den
 | `monitoring` | Aktionsgruppe, Alarme (Exceptions, Health-Check alle 4 Stunden per Logic App, Tageslimit für Logs, Ablauf von Secrets im Key Vault) und Budget je Resource Group; nur mit Empfängern | Baustein 5 |
 | [`keyvault`](keyvault/README.md) | Key Vault je Projekt und Umgebung (RBAC, Purge-Schutz), Platzhalter-Secrets, Key-Vault-Referenzen als App-Settings `Secrets__<Name>`, URI des Vaults als `Seed__KeyVaultUri`, auf Wunsch Audit-Log in den Workspace aus `core` | Baustein 2 |
 | `storage` | Eigener Storage Account für Daten: Tabellen, Queues, Container, Versionierung, Soft Delete, Lifecycle-Regeln, Datenrollen für die Function, optional Schreibrecht auf den Container `extension` für eine selbst gehostete Browser-Erweiterung; Verbindung `SeedStorage` als App-Settings | Baustein 1 |
-| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer, eingeschränkte Rechte am Repo (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an; ab v0.20.0 optional neues Projekt, eigene Service Connection je Projekt mit Checks und Mitglieder | Phase 3 |
+| `ado-project` | Seed-Projekt in Azure DevOps: Repo aus dem Template oder ein vorhandenes Repo, Environments mit Freigaben, Pipeline, Branch-Policies für PR-Validierung und Reviewer, eingeschränkte Rechte am Repo (für `seed-scaffold`); `frontend = false` legt ein Projekt ohne Frontend an; ab v0.20.0 optional neues Projekt, eigene Service Connection je Projekt mit Checks und Mitglieder; ab v0.21.0 auf Wunsch eine Service Connection je Umgebung, auch in eigenen Subscriptions | Phase 3 |
 
 ### Besitzer (`owner`)
 
@@ -341,7 +341,7 @@ Die anlegende Identität braucht dafür am Repo „Manage permissions“, und si
 
 Umstieg: Der erste Plan nach dem Update zeigt zwei neue Ressourcen `azuredevops_git_permissions.repository`, ohne Änderung an Repo, Pipeline oder Policies.
 
-**Werte in `azure-pipelines.yml`:** Ab v0.18.0 prüft das Modul alle Werte, die es in die erzeugte Pipeline schreibt, damit ein Zeilenumbruch oder `: ` das YAML nicht umschreibt (etwa `confirmDataDeletion: true` setzen oder ein Repo ergänzen): `pipelines_version` ist ein Release-Tag (`vX.Y.Z`), `service_connection`, `github_connection` und `pool` bestehen aus Buchstaben, Ziffern, `.`, `_`, `-` und Leerzeichen, `environments` aus Kleinbuchstaben, Ziffern und `-`, `terraform_state` aus gültigen Namen für Resource Group, Storage Account und Container.
+**Werte in `azure-pipelines.yml`:** Ab v0.18.0 prüft das Modul alle Werte, die es in die erzeugte Pipeline schreibt, damit ein Zeilenumbruch oder `: ` das YAML nicht umschreibt (etwa `confirmDataDeletion: true` setzen oder ein Repo ergänzen): `pipelines_version` ist ein Release-Tag (`vX.Y.Z`), `service_connection`, `github_connection`, `pool` und die Namen in `environment_service_connections` bestehen aus Buchstaben, Ziffern, `.`, `_`, `-` und Leerzeichen, `environments` aus Kleinbuchstaben, Ziffern und `-`, `terraform_state` aus gültigen Namen für Resource Group, Storage Account und Container.
 
 #### Selbstbedienung: Identität je Projekt (ab v0.20.0)
 
@@ -350,7 +350,7 @@ Zielbild: Jedes Seed-Projekt hat eine eigene Deployment-Identität, eine User-As
 1. Prüfen: Eingaben, Zielprojekt, Mitgliedschaft der Person, Name frei; bei einem neuen Repo enthält `main` nur README, LICENSE oder `.gitignore`.
 2. Identität in Azure: `id-<name>`, Resource Groups `rg-<name>-<env>`, Rollen darauf, Schreibrecht im State-Container nur für `<name>/`.
 3. seed-template am Tag als ein Commit nach `main`; danach `project.yaml` und `azure-pipelines.yml` über dieses Modul.
-4. Dieses Modul: Service Connection `sc-<name>` mit Branch-Prüfung und Required-Template-Check, Environments mit Freigaben, Reviewer-Policy (`min_reviewers`, die eigene Stimme zählt nicht), PR-Validierung, Rechte am Repo; `requester_can_approve` und `min_reviewers` wie beim Start gewählt. Mit den Outputs `workload_identity_federation_issuer` und `workload_identity_federation_subject` legt der Aufrufer danach das Federated Credential an `id-<name>` an.
+4. Dieses Modul: Service Connection `sc-<name>` mit Branch-Prüfung und Required-Template-Check, Environments mit Freigaben, Reviewer-Policy (`min_reviewers`, die eigene Stimme zählt nicht), PR-Validierung, Rechte am Repo; `requester_can_approve` und `min_reviewers` wie beim Start gewählt. Mit den Outputs `workload_identity_federation_issuer` und `workload_identity_federation_subject` legt der Aufrufer danach das Federated Credential an `id-<name>` an. Mit einer Identität je Umgebung (ab v0.21.0, unten) entsprechend `id-<name>-<env>` und `sc-<name>-<env>`.
 5. Verifizieren: `main` zeigt auf den Commit aus Schritt 3 und die Commits des Moduls, kein fremder Push dazwischen; sonst Abbruch.
 6. Pipeline für `sc-<name>` und die Environments berechtigen, ersten Lauf starten.
 
@@ -380,6 +380,77 @@ Neue Ausgaben: `service_connection_id` (eigene oder vorhandene, sonst leer), `wo
 - **Grenzen der Identität:** Im Zielbild bearbeitet sie keine anderen Resource Groups, keine fremden States und App-Registrierungen und vergibt keine Rollen außerhalb der Seed-Rollen; das legen die Rollen fest, die der Aufrufer vergibt. Projekte mit Custom Connector brauchen den Anwendungsbenutzer in der Power-Platform-Umgebung für ihre eigene Identität (Onboarding in seed-pipelines).
 
 Umstieg: Bestehende Aufrufe laufen unverändert weiter; der erste Plan nach dem Update zeigt keine Änderung.
+
+#### Service Connection je Umgebung (ab v0.21.0)
+
+Ab v0.21.0 kann jede Umgebung eine eigene Deployment-Identität haben: `id-<name>-<env>` hinter `sc-<name>-<env>`, jede auf Wunsch in einer eigenen Subscription. Ein Fehler oder ein kompromittierter Lauf in `dev` kommt so nicht an `prod`. Das zentrale Scaffold legt die Identitäten an (Subscriptions je Umgebung zentral hinterlegt) und übergibt sie dem Modul in `environment_service_connections`; das Modul legt die Service Connections an und schreibt `azure-pipelines.yml`.
+
+| Variable | Typ, Standard | Wirkung |
+| --- | --- | --- |
+| `environment_service_connections` | `map(object({ name, identity = optional(object({ tenant_id, subscription_id, subscription_name, client_id })) }))`, `{}` | Schlüssel = Umgebung aus `environments`. Nicht leer: gilt statt `service_connection` und `service_connection_identity`. `identity` ist mit `create_service_connection` je Eintrag Pflicht. |
+| `service_connection` | `string`, `""` (bis v0.20.0 Pflicht) | Pflicht nur noch ohne `environment_service_connections`. |
+
+Mit `environment_service_connections`:
+
+- **Prüfungen:** genau ein Eintrag je Umgebung aus `environments` (keine fehlende, keine zusätzliche), Namen wie bei `service_connection` und jeder nur einmal; mit `create_service_connection` `identity` je Eintrag, `tenant_id`, `subscription_id` und `client_id` als GUID, `subscription_name` nicht leer. Ohne `service_connection` und ohne Map bricht der Plan ab. Ist `service_connection` zusätzlich gesetzt, gilt die Map.
+- **`create_service_connection = true`:** je Umgebung eine Service Connection wie die einzelne (Workload Identity Federation, manuell, ohne Prüfung beim Anlegen, erst nach Dateien, Branch-Policies und Rechten am Repo), jede mit eigener Branch-Prüfung und eigenem Required-Template-Check mit denselben Werten.
+- **`authorize_service_connections = true`:** Die Pipeline wird für jede dieser Service Connections berechtigt (mit `create_service_connection` erst, wenn die Checks daran stehen), dazu für die GitHub-Service-Connection wie bisher. Ohne `create_service_connection` sucht das Modul die vorhandenen unter ihren Namen.
+- **`azure-pipelines.yml`:** Der Pflichtparameter `serviceConnection` von `web-app.yml` bekommt die Service Connection der ersten Umgebung in `environments`, jede Umgebung unter `environments` ihre eigene (`serviceConnection`, das kennt `web-app.yml` seit v0.1.0). Wie alle Dateien schreibt das Modul sie nur beim Anlegen; ein bestehendes Projekt passt seine `azure-pipelines.yml` selbst an.
+
+Ausgaben, leere Maps statt `null`:
+
+| Ausgabe | Inhalt |
+| --- | --- |
+| `service_connection_ids` | Umgebung => ID der eigenen oder der vorhandenen Service Connection, für die das Modul die Pipeline berechtigt; sonst `{}`. |
+| `workload_identity_federation` | Umgebung => `{ issuer, subject }` für das Federated Credential an `id-<name>-<env>`; nur mit `create_service_connection`, sonst `{}`. |
+
+`service_connection_id`, `workload_identity_federation_issuer` und `workload_identity_federation_subject` bleiben für die einzelne Service Connection und sind mit der Map leer.
+
+Beispiel, `dev` und `prod` in zwei Subscriptions (vollständig in [examples/ado-project-environments](examples/ado-project-environments/main.tf)):
+
+```hcl
+module "project" {
+  source = "git::https://github.com/blackforestsentinel/seed-terraform.git//ado-project?ref=v0.21.0"
+
+  ado_project               = "Kundenprojekte"
+  name                      = "kundenportal"
+  environments              = ["dev", "prod"]
+  github_connection         = "github-blackforestsentinel"
+  create_service_connection = true
+  environment_service_connections = {
+    dev = {
+      name = "sc-kundenportal-dev"
+      identity = {
+        tenant_id         = "00000000-0000-0000-0000-000000000000"
+        subscription_id   = "00000000-0000-0000-0000-000000000001"
+        subscription_name = "Seed Entwicklung"
+        client_id         = "00000000-0000-0000-0000-000000000011"
+      }
+    }
+    prod = {
+      name = "sc-kundenportal-prod"
+      identity = {
+        tenant_id         = "00000000-0000-0000-0000-000000000000"
+        subscription_id   = "00000000-0000-0000-0000-000000000002"
+        subscription_name = "Seed Produktion"
+        client_id         = "00000000-0000-0000-0000-000000000012"
+      }
+    }
+  }
+  terraform_state = {
+    resource_group  = "rg-seed-tfstate"
+    storage_account = "stseedtfstate"
+    container       = "tfstate"
+  }
+}
+
+# Je Umgebung ein Federated Credential an id-kundenportal-<env>, etwa mit azurerm:
+# for_each = module.project.workload_identity_federation
+#   issuer  = each.value.issuer
+#   subject = each.value.subject
+```
+
+Umstieg: Ohne `environment_service_connections` ändert sich nichts; die bisherigen Ressourcen der einzelnen Service Connection behalten ihre Adressen, der erste Plan nach dem Update zeigt keine Änderung. Die Ressourcen je Umgebung sind eigene (`azuredevops_serviceendpoint_azurerm.environments`, `azuredevops_check_branch_control.environments`, `azuredevops_check_required_template.environments`, Berechtigungen `azuredevops_pipeline_authorization.endpoints["azure-<env>"]`). Ein Projekt, das von einer auf mehrere Service Connections umsteigt, bekommt neue Service Connections je Umgebung; die einzelne entfernt Terraform dann, falls das Modul sie angelegt hat.
 
 #### MCP
 
@@ -511,6 +582,8 @@ terraform -chdir=examples/storage init -backend=false
 terraform -chdir=examples/storage validate
 terraform -chdir=examples/ado-project init -backend=false
 terraform -chdir=examples/ado-project validate
+terraform -chdir=examples/ado-project-environments init -backend=false
+terraform -chdir=examples/ado-project-environments validate
 ```
 
 Module mit Tests (`<modul>/tests/*.tftest.hcl`) laufen gegen einen Mock der Provider, ohne Tenant und ohne Rechte:

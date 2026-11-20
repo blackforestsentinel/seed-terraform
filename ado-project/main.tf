@@ -43,11 +43,29 @@ locals {
 
 # --- Service Connections --------------------------------------------------------
 
+locals {
+  # Ab v0.21.0: eine Service Connection je Umgebung (environment_service_connections) statt einer
+  # für alle. Die bisherigen Ressourcen mit count bleiben für den Einzelfall unverändert, damit
+  # bestehende Aufrufe keinen Plan-Diff bekommen; für die Map gibt es eigene mit for_each.
+  per_environment = length(var.environment_service_connections) > 0
+}
+
 # Vorhandene Azure-Service-Connection (wie bis v0.19.0), nur zum Berechtigen der Pipeline.
 data "azuredevops_serviceendpoint_azurerm" "this" {
-  count                 = var.authorize_service_connections && !var.create_service_connection ? 1 : 0
+  count                 = var.authorize_service_connections && !var.create_service_connection && !local.per_environment ? 1 : 0
   project_id            = local.project_id
   service_endpoint_name = var.service_connection
+}
+
+# Dasselbe je Umgebung.
+data "azuredevops_serviceendpoint_azurerm" "environments" {
+  for_each = {
+    for env, sc in var.environment_service_connections : env => sc
+    if var.authorize_service_connections && !var.create_service_connection
+  }
+
+  project_id            = local.project_id
+  service_endpoint_name = each.value.name
 }
 
 # Die GitHub-Service-Connection für die Templates bleibt vorhanden: Das zentrale Scaffold teilt sie
@@ -165,15 +183,18 @@ resource "azuredevops_git_repository_file" "pipeline" {
   branch        = local.branch
   file          = "azure-pipelines.yml"
   content = templatefile("${path.module}/templates/azure-pipelines.yml.tftpl", {
-    name               = var.name
-    frontend           = var.frontend
-    environments       = var.environments
-    service_connection = var.service_connection
-    github_connection  = var.github_connection
-    pipelines_version  = var.pipelines_version
-    terraform_state    = var.terraform_state
-    pool               = var.pool
-    pipelines_v017     = local.pipelines_v017
+    name         = var.name
+    frontend     = var.frontend
+    environments = var.environments
+    # Je Umgebung: Der Pflichtparameter serviceConnection von web-app.yml bekommt die der ersten
+    # Umgebung, environments[].serviceConnection überschreibt ihn für jede.
+    service_connection              = local.per_environment ? var.environment_service_connections[var.environments[0]].name : var.service_connection
+    environment_service_connections = { for env, sc in var.environment_service_connections : env => sc.name }
+    github_connection               = var.github_connection
+    pipelines_version               = var.pipelines_version
+    terraform_state                 = var.terraform_state
+    pool                            = var.pool
+    pipelines_v017                  = local.pipelines_v017
   })
   commit_message      = "seed-scaffold: azure-pipelines.yml für ${var.name}"
   overwrite_on_create = true
@@ -232,12 +253,16 @@ resource "azuredevops_build_definition" "this" {
   depends_on = [azuredevops_git_repository_file.pipeline]
 }
 
-# Mit create_service_connection erst, wenn die Checks an der Service Connection stehen.
+# Mit create_service_connection erst, wenn die Checks an der Service Connection stehen. Schlüssel
+# azure und github wie bisher; je Umgebung azure-<umgebung> statt azure (Umgebungsnamen bestehen
+# aus Kleinbuchstaben, Ziffern und Bindestrichen, ein Schlüssel github entsteht so nicht).
 resource "azuredevops_pipeline_authorization" "endpoints" {
-  for_each = var.authorize_service_connections ? {
-    azure  = local.service_connection_id
-    github = data.azuredevops_serviceendpoint_github.this[0].id
-  } : {}
+  for_each = var.authorize_service_connections ? merge(
+    local.per_environment ? {
+      for env in keys(var.environment_service_connections) : "azure-${env}" => local.service_connection_ids[env]
+    } : { azure = local.service_connection_id },
+    { github = data.azuredevops_serviceendpoint_github.this[0].id },
+  ) : {}
 
   project_id  = local.project_id
   resource_id = each.value
@@ -247,6 +272,8 @@ resource "azuredevops_pipeline_authorization" "endpoints" {
   depends_on = [
     azuredevops_check_branch_control.service_connection,
     azuredevops_check_required_template.service_connection,
+    azuredevops_check_branch_control.environments,
+    azuredevops_check_required_template.environments,
   ]
 }
 
@@ -419,7 +446,7 @@ resource "azuredevops_git_permissions" "repository" {
 # Sie entsteht erst, wenn Dateien, Branch-Policies und Rechte am Repo stehen; berechtigt wird die
 # Pipeline erst, wenn auch die Checks daran stehen.
 resource "azuredevops_serviceendpoint_azurerm" "this" {
-  count = var.create_service_connection ? 1 : 0
+  count = var.create_service_connection && !local.per_environment ? 1 : 0
 
   project_id                             = local.project_id
   service_endpoint_name                  = var.service_connection
@@ -446,10 +473,50 @@ resource "azuredevops_serviceendpoint_azurerm" "this" {
   ]
 }
 
+# Je Umgebung (environment_service_connections) dasselbe mit der Identität dieser Umgebung, die in
+# einer eigenen Subscription liegen kann. Gleiche Reihenfolge wie oben.
+resource "azuredevops_serviceendpoint_azurerm" "environments" {
+  for_each = {
+    for env, sc in var.environment_service_connections : env => sc
+    if var.create_service_connection
+  }
+
+  project_id                             = local.project_id
+  service_endpoint_name                  = each.value.name
+  description                            = "Deployment-Identität des Seed-Projekts ${var.name} für die Umgebung ${each.key}, nur für dessen Pipeline"
+  service_endpoint_authentication_scheme = "WorkloadIdentityFederation"
+  azurerm_spn_tenantid                   = each.value.identity.tenant_id
+  azurerm_subscription_id                = each.value.identity.subscription_id
+  azurerm_subscription_name              = each.value.identity.subscription_name
+
+  credentials {
+    serviceprincipalid = each.value.identity.client_id
+  }
+
+  features {
+    validate = false
+  }
+
+  depends_on = [
+    azuredevops_git_repository_file.pipeline,
+    azuredevops_branch_policy_build_validation.this,
+    azuredevops_branch_policy_min_reviewers.this,
+    azuredevops_git_permissions.repository,
+  ]
+}
+
 locals {
+  # Mit environment_service_connections leer: Es gibt keine einzelne Service Connection.
   service_connection_id = (
+    local.per_environment ? "" :
     var.create_service_connection ? azuredevops_serviceendpoint_azurerm.this[0].id :
     var.authorize_service_connections ? data.azuredevops_serviceendpoint_azurerm.this[0].id : ""
+  )
+
+  # Umgebung => ID; nur Service Connections, die das Modul anlegt oder für die Berechtigung sucht.
+  service_connection_ids = (
+    var.create_service_connection ? { for env, sc in azuredevops_serviceendpoint_azurerm.environments : env => sc.id } :
+    { for env, sc in data.azuredevops_serviceendpoint_azurerm.environments : env => sc.id }
   )
 
   # Die Branch-Prüfung vergleicht jedes Repo des Laufs mit derselben Liste, auch seed-pipelines,
@@ -460,7 +527,7 @@ locals {
 
 # Nur Läufe von main (und seed-pipelines an einem Release-Tag) bekommen die Identität.
 resource "azuredevops_check_branch_control" "service_connection" {
-  count = var.create_service_connection ? 1 : 0
+  count = var.create_service_connection && !local.per_environment ? 1 : 0
 
   project_id                       = local.project_id
   display_name                     = "Nur main"
@@ -474,10 +541,38 @@ resource "azuredevops_check_branch_control" "service_connection" {
 # Nur Läufe, die templates/web-app.yml aus seed-pipelines am Tag pipelines_version per extends
 # einbinden. Eine neue Version von seed-pipelines braucht einen neuen Lauf des Moduls.
 resource "azuredevops_check_required_template" "service_connection" {
-  count = var.create_service_connection ? 1 : 0
+  count = var.create_service_connection && !local.per_environment ? 1 : 0
 
   project_id           = local.project_id
   target_resource_id   = azuredevops_serviceendpoint_azurerm.this[0].id
+  target_resource_type = "endpoint"
+
+  required_template {
+    repository_type = "github"
+    repository_name = var.required_template_repository
+    repository_ref  = "refs/tags/${var.pipelines_version}"
+    template_path   = "templates/web-app.yml"
+  }
+}
+
+# Dieselben Checks an jeder Service Connection je Umgebung.
+resource "azuredevops_check_branch_control" "environments" {
+  for_each = azuredevops_serviceendpoint_azurerm.environments
+
+  project_id                       = local.project_id
+  display_name                     = "Nur main"
+  target_resource_id               = each.value.id
+  target_resource_type             = "endpoint"
+  allowed_branches                 = join(",", local.service_connection_allowed_refs)
+  verify_branch_protection         = false
+  ignore_unknown_protection_status = false
+}
+
+resource "azuredevops_check_required_template" "environments" {
+  for_each = azuredevops_serviceendpoint_azurerm.environments
+
+  project_id           = local.project_id
+  target_resource_id   = each.value.id
   target_resource_type = "endpoint"
 
   required_template {
