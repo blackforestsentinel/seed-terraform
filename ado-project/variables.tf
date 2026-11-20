@@ -82,12 +82,19 @@ variable "app_approval_environments" {
 }
 
 variable "service_connection" {
-  description = "Name der Azure-Service-Connection (Workload Identity Federation) im Projekt; mit create_service_connection der Name der neuen, etwa sc-<name>."
+  description = "Name der Azure-Service-Connection (Workload Identity Federation) im Projekt; mit create_service_connection der Name der neuen, etwa sc-<name>. Leer nur mit environment_service_connections, die dann statt ihrer gelten."
   type        = string
+  default     = ""
+  nullable    = false
 
   validation {
-    condition     = can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", var.service_connection))
+    condition     = var.service_connection == "" || can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", var.service_connection))
     error_message = "service_connection: Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Leerzeichen, beginnt mit Buchstabe oder Ziffer."
+  }
+
+  validation {
+    condition     = var.service_connection != "" || length(var.environment_service_connections) > 0
+    error_message = "service_connection: Pflicht, außer mit environment_service_connections (eine Service Connection je Umgebung)."
   }
 }
 
@@ -132,7 +139,7 @@ variable "pr_validation" {
 }
 
 variable "authorize_service_connections" {
-  description = "Pipeline für beide Service Connections berechtigen. Braucht die Administrator-Rolle an den Service Connections: Das zentrale Scaffold hat sie, weil es die Service Connections selbst ins Projekt teilt; seed-scaffold im eigenen Projekt lässt das aus, dort gibt ein Admin beim ersten Lauf frei. Mit create_service_connection hat die anlegende Identität die Rolle an der eigenen Service Connection."
+  description = "Pipeline für die Azure-Service-Connection (mit environment_service_connections für jede) und die GitHub-Service-Connection berechtigen. Braucht die Administrator-Rolle an den Service Connections: Das zentrale Scaffold hat sie, weil es die Service Connections selbst ins Projekt teilt; seed-scaffold im eigenen Projekt lässt das aus, dort gibt ein Admin beim ersten Lauf frei. Mit create_service_connection hat die anlegende Identität die Rolle an der eigenen Service Connection."
   type        = bool
   default     = true
 }
@@ -211,7 +218,7 @@ variable "project_description" {
 }
 
 variable "create_service_connection" {
-  description = "Azure-Service-Connection service_connection im Projekt selbst anlegen (Workload Identity Federation, manuell) für die Identität aus service_connection_identity, mit Branch-Prüfung und Required-Template-Check. false (Standard): Sie gibt es schon, etwa als geteilte Service Connection."
+  description = "Azure-Service-Connection service_connection im Projekt selbst anlegen (Workload Identity Federation, manuell) für die Identität aus service_connection_identity, mit Branch-Prüfung und Required-Template-Check; mit environment_service_connections je Umgebung eine. false (Standard): Sie gibt es schon, etwa als geteilte Service Connection."
   type        = bool
   default     = false
   nullable    = false
@@ -228,8 +235,8 @@ variable "service_connection_identity" {
   default = null
 
   validation {
-    condition     = !var.create_service_connection || var.service_connection_identity != null
-    error_message = "service_connection_identity: Mit create_service_connection Pflicht."
+    condition     = !var.create_service_connection || var.service_connection_identity != null || length(var.environment_service_connections) > 0
+    error_message = "service_connection_identity: Mit create_service_connection Pflicht, außer mit environment_service_connections."
   }
 
   validation {
@@ -238,6 +245,57 @@ variable "service_connection_identity" {
       can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))
     ]) && trimspace(var.service_connection_identity.subscription_name) != ""
     error_message = "service_connection_identity: tenant_id, subscription_id und client_id als GUID, subscription_name nicht leer."
+  }
+}
+
+# --- Service Connection je Umgebung (ab v0.21.0) ---------------------------------
+
+variable "environment_service_connections" {
+  description = "Je Umgebung eine eigene Azure-Service-Connection, Schlüssel = Umgebung aus environments, etwa sc-<name>-<umgebung>. Nicht leer: gilt statt service_connection und service_connection_identity, und azure-pipelines.yml setzt serviceConnection je Umgebung. identity (Tenant, Subscription mit ID und Name, client_id der Identität dieser Umgebung) ist mit create_service_connection Pflicht; jede Umgebung kann in einer eigenen Subscription liegen. Leer (Standard): eine Service Connection für alle Umgebungen wie bisher."
+  type = map(object({
+    name = string
+    identity = optional(object({
+      tenant_id         = string
+      subscription_id   = string
+      subscription_name = string
+      client_id         = string
+    }))
+  }))
+  default  = {}
+  nullable = false
+
+  validation {
+    condition = length(var.environment_service_connections) == 0 || (
+      length(setsubtract(var.environments, keys(var.environment_service_connections))) == 0 &&
+      length(setsubtract(keys(var.environment_service_connections), var.environments)) == 0
+    )
+    error_message = "environment_service_connections: genau ein Eintrag je Umgebung aus environments, keine fehlende und keine zusätzliche."
+  }
+
+  # Wie service_connection: Die Namen landen in azure-pipelines.yml.
+  validation {
+    condition     = alltrue([for sc in values(var.environment_service_connections) : can(regex("^[A-Za-z0-9][A-Za-z0-9._ -]*$", sc.name))])
+    error_message = "environment_service_connections: Namen aus Buchstaben, Ziffern, Punkt, Unterstrich, Bindestrich und Leerzeichen, beginnen mit Buchstabe oder Ziffer."
+  }
+
+  validation {
+    condition     = length(distinct([for sc in values(var.environment_service_connections) : sc.name])) == length(var.environment_service_connections)
+    error_message = "environment_service_connections: jeder Name nur einmal; eine Service Connection für alle Umgebungen heißt service_connection."
+  }
+
+  validation {
+    condition     = !var.create_service_connection || alltrue([for sc in values(var.environment_service_connections) : sc.identity != null])
+    error_message = "environment_service_connections: Mit create_service_connection ist identity je Umgebung Pflicht."
+  }
+
+  validation {
+    condition = alltrue([
+      for sc in values(var.environment_service_connections) : sc.identity == null ? true : alltrue([
+        for id in [sc.identity.tenant_id, sc.identity.subscription_id, sc.identity.client_id] :
+        can(regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$", id))
+      ]) && trimspace(sc.identity.subscription_name) != ""
+    ])
+    error_message = "environment_service_connections: identity mit tenant_id, subscription_id und client_id als GUID, subscription_name nicht leer."
   }
 }
 

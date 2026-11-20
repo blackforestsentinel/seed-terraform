@@ -937,3 +937,355 @@ run "project_yaml_ohne_resource_groups" {
     error_message = "Mit Kommentar; owner und die übrigen Schlüssel bleiben."
   }
 }
+
+# --- Service Connection je Umgebung (ab v0.21.0) ---------------------------------------
+
+run "service_connection_je_umgebung_aus_wie_bisher" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  assert {
+    condition = alltrue([
+      length(azuredevops_serviceendpoint_azurerm.environments) == 0,
+      length(data.azuredevops_serviceendpoint_azurerm.environments) == 0,
+      length(azuredevops_check_branch_control.environments) == 0,
+      length(azuredevops_check_required_template.environments) == 0,
+      toset(keys(azuredevops_pipeline_authorization.endpoints)) == toset(["azure", "github"]),
+      length(output.service_connection_ids) == 0,
+      length(output.workload_identity_federation) == 0,
+    ])
+    error_message = "Ohne environment_service_connections: keine Ressourcen je Umgebung, Berechtigungen azure und github wie bisher, neue Outputs leer."
+  }
+
+  assert {
+    condition = alltrue([
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.serviceConnection == "sc-seed",
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.environments == [{ name = "dev" }, { name = "prod" }],
+      !strcontains(azuredevops_git_repository_file.pipeline.content, "eigene Service Connection"),
+    ])
+    error_message = "Ohne environment_service_connections bleibt azure-pipelines.yml wie bisher: eine serviceConnection, Umgebungen nur mit Namen."
+  }
+}
+
+# So ruft das zentrale Scaffold das Modul mit einer Identität je Umgebung auf, jede in einer eigenen
+# Subscription.
+run "service_connection_je_umgebung" {
+  command   = apply
+  state_key = "environment_service_connections"
+
+  variables {
+    pipelines_version         = "v0.21.0"
+    service_connection        = ""
+    create_service_connection = true
+    environment_service_connections = {
+      dev = {
+        name = "sc-kundenportal-dev"
+        identity = {
+          tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          subscription_name = "Seed Entwicklung"
+          client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        }
+      }
+      prod = {
+        name = "sc-kundenportal-prod"
+        identity = {
+          tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          subscription_id   = "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+          subscription_name = "Seed Produktion"
+          client_id         = "ffffffff-ffff-ffff-ffff-ffffffffffff"
+        }
+      }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      length(azuredevops_serviceendpoint_azurerm.this) == 0,
+      length(azuredevops_check_branch_control.service_connection) == 0,
+      length(azuredevops_check_required_template.service_connection) == 0,
+      length(data.azuredevops_serviceendpoint_azurerm.this) == 0,
+      length(data.azuredevops_serviceendpoint_azurerm.environments) == 0,
+      length(azuredevops_serviceendpoint_azurerm.environments) == 2,
+    ])
+    error_message = "Je Umgebung eine eigene Service Connection, keine einzelne und keine Suche nach vorhandenen."
+  }
+
+  assert {
+    condition = alltrue([
+      azuredevops_serviceendpoint_azurerm.environments["dev"].service_endpoint_name == "sc-kundenportal-dev",
+      azuredevops_serviceendpoint_azurerm.environments["dev"].azurerm_subscription_id == "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      azuredevops_serviceendpoint_azurerm.environments["dev"].azurerm_subscription_name == "Seed Entwicklung",
+      azuredevops_serviceendpoint_azurerm.environments["dev"].credentials[0].serviceprincipalid == "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      azuredevops_serviceendpoint_azurerm.environments["prod"].service_endpoint_name == "sc-kundenportal-prod",
+      azuredevops_serviceendpoint_azurerm.environments["prod"].azurerm_subscription_id == "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      azuredevops_serviceendpoint_azurerm.environments["prod"].azurerm_subscription_name == "Seed Produktion",
+      azuredevops_serviceendpoint_azurerm.environments["prod"].credentials[0].serviceprincipalid == "ffffffff-ffff-ffff-ffff-ffffffffffff",
+    ])
+    error_message = "Name, Subscription und client_id kommen je Umgebung aus environment_service_connections."
+  }
+
+  assert {
+    condition = alltrue([
+      for sc in azuredevops_serviceendpoint_azurerm.environments : alltrue([
+        sc.project_id == "11111111-1111-1111-1111-111111111111",
+        sc.service_endpoint_authentication_scheme == "WorkloadIdentityFederation",
+        sc.azurerm_spn_tenantid == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        sc.credentials[0].serviceprincipalkey == null,
+        sc.features[0].validate == false,
+      ])
+    ])
+    error_message = "Jede Service Connection: Workload Identity Federation, manuell, ohne Secret und ohne Prüfung beim Anlegen."
+  }
+
+  assert {
+    condition = alltrue([
+      for env in ["dev", "prod"] : alltrue([
+        azuredevops_check_branch_control.environments[env].target_resource_id == azuredevops_serviceendpoint_azurerm.environments[env].id,
+        azuredevops_check_branch_control.environments[env].target_resource_type == "endpoint",
+        azuredevops_check_branch_control.environments[env].allowed_branches == "refs/heads/main,refs/tags/v*",
+        azuredevops_check_branch_control.environments[env].verify_branch_protection == false,
+        azuredevops_check_branch_control.environments[env].ignore_unknown_protection_status == false,
+        azuredevops_check_required_template.environments[env].target_resource_id == azuredevops_serviceendpoint_azurerm.environments[env].id,
+        azuredevops_check_required_template.environments[env].target_resource_type == "endpoint",
+        azuredevops_check_required_template.environments[env].required_template[0].repository_name == "blackforestsentinel/seed-pipelines",
+        azuredevops_check_required_template.environments[env].required_template[0].repository_ref == "refs/tags/v0.21.0",
+        azuredevops_check_required_template.environments[env].required_template[0].template_path == "templates/web-app.yml",
+      ])
+    ]) && length(azuredevops_check_branch_control.environments) == 2 && length(azuredevops_check_required_template.environments) == 2
+    error_message = "An jeder Service Connection Branch-Prüfung und Required-Template-Check wie bei der einzelnen."
+  }
+
+  assert {
+    condition = alltrue([
+      toset(keys(azuredevops_pipeline_authorization.endpoints)) == toset(["azure-dev", "azure-prod", "github"]),
+      azuredevops_pipeline_authorization.endpoints["azure-dev"].resource_id == azuredevops_serviceendpoint_azurerm.environments["dev"].id,
+      azuredevops_pipeline_authorization.endpoints["azure-prod"].resource_id == azuredevops_serviceendpoint_azurerm.environments["prod"].id,
+      azuredevops_pipeline_authorization.endpoints["github"].resource_id == "44444444-4444-4444-4444-444444444444",
+    ])
+    error_message = "Die Pipeline ist für jede Service Connection je Umgebung berechtigt und für die vorhandene GitHub-Service-Connection."
+  }
+
+  assert {
+    condition = alltrue([
+      output.service_connection_ids == tomap({
+        dev  = azuredevops_serviceendpoint_azurerm.environments["dev"].id
+        prod = azuredevops_serviceendpoint_azurerm.environments["prod"].id
+      }),
+      toset(keys(output.workload_identity_federation)) == toset(["dev", "prod"]),
+      output.workload_identity_federation["dev"].issuer == azuredevops_serviceendpoint_azurerm.environments["dev"].workload_identity_federation_issuer,
+      output.workload_identity_federation["dev"].subject == azuredevops_serviceendpoint_azurerm.environments["dev"].workload_identity_federation_subject,
+      output.workload_identity_federation["prod"].issuer == azuredevops_serviceendpoint_azurerm.environments["prod"].workload_identity_federation_issuer,
+      output.workload_identity_federation["prod"].subject == azuredevops_serviceendpoint_azurerm.environments["prod"].workload_identity_federation_subject,
+    ])
+    error_message = "Outputs je Umgebung: ID sowie Issuer und Subject für das Federated Credential an der Identität dieser Umgebung."
+  }
+
+  assert {
+    condition = alltrue([
+      output.service_connection_id == "",
+      output.workload_identity_federation_issuer == "",
+      output.workload_identity_federation_subject == "",
+    ])
+    error_message = "Die Outputs der einzelnen Service Connection bleiben leer."
+  }
+
+  assert {
+    condition = alltrue([
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.serviceConnection == "sc-kundenportal-dev",
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.environments == [
+        { name = "dev", serviceConnection = "sc-kundenportal-dev" },
+        { name = "prod", serviceConnection = "sc-kundenportal-prod" },
+      ],
+      strcontains(azuredevops_git_repository_file.pipeline.content, "\n      - name: prod\n        serviceConnection: sc-kundenportal-prod\n"),
+    ])
+    error_message = "azure-pipelines.yml: serviceConnection der ersten Umgebung als Pflichtparameter, je Umgebung die eigene."
+  }
+}
+
+# Vorhandene Service Connections je Umgebung (etwa geteilt); service_connection gilt dann nicht.
+run "service_connection_je_umgebung_vorhanden" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    environments = ["test", "prod"]
+    environment_service_connections = {
+      prod = { name = "sc-kundenportal-prod" }
+      test = { name = "sc-kundenportal-test" }
+    }
+  }
+
+  assert {
+    condition = alltrue([
+      length(data.azuredevops_serviceendpoint_azurerm.this) == 0,
+      data.azuredevops_serviceendpoint_azurerm.environments["test"].service_endpoint_name == "sc-kundenportal-test",
+      data.azuredevops_serviceendpoint_azurerm.environments["prod"].service_endpoint_name == "sc-kundenportal-prod",
+      data.azuredevops_serviceendpoint_azurerm.environments["prod"].project_id == "11111111-1111-1111-1111-111111111111",
+      length(azuredevops_serviceendpoint_azurerm.environments) == 0,
+      length(azuredevops_check_branch_control.environments) == 0,
+    ])
+    error_message = "Ohne create_service_connection: vorhandene Service Connections je Umgebung suchen, nichts anlegen."
+  }
+
+  assert {
+    condition = alltrue([
+      toset(keys(azuredevops_pipeline_authorization.endpoints)) == toset(["azure-test", "azure-prod", "github"]),
+      azuredevops_pipeline_authorization.endpoints["azure-test"].resource_id == "33333333-3333-3333-3333-333333333333",
+      output.service_connection_ids == tomap({ test = "33333333-3333-3333-3333-333333333333", prod = "33333333-3333-3333-3333-333333333333" }),
+      length(output.workload_identity_federation) == 0,
+      output.service_connection_id == "",
+    ])
+    error_message = "Die Pipeline ist für die vorhandenen Service Connections je Umgebung berechtigt; ohne eigene keine Federation-Werte."
+  }
+
+  assert {
+    condition = alltrue([
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.serviceConnection == "sc-kundenportal-test",
+      yamldecode(azuredevops_git_repository_file.pipeline.content).extends.parameters.environments == [
+        { name = "test", serviceConnection = "sc-kundenportal-test" },
+        { name = "prod", serviceConnection = "sc-kundenportal-prod" },
+      ],
+    ])
+    error_message = "Pflichtparameter serviceConnection aus der ersten Umgebung in environments, nicht aus service_connection; Reihenfolge wie environments."
+  }
+}
+
+run "service_connection_je_umgebung_ohne_berechtigung" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    authorize_service_connections = false
+    environment_service_connections = {
+      dev  = { name = "sc-kundenportal-dev" }
+      prod = { name = "sc-kundenportal-prod" }
+    }
+  }
+
+  assert {
+    condition     = length(data.azuredevops_serviceendpoint_azurerm.environments) == 0 && length(azuredevops_pipeline_authorization.endpoints) == 0 && length(output.service_connection_ids) == 0
+    error_message = "Ohne Berechtigung und ohne eigene Service Connections: keine Suche, keine Berechtigung, service_connection_ids leer."
+  }
+}
+
+run "service_connection_je_umgebung_fehlt" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    environment_service_connections = {
+      dev = { name = "sc-kundenportal-dev" }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_je_umgebung_zusaetzlich" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    environment_service_connections = {
+      dev  = { name = "sc-kundenportal-dev" }
+      prod = { name = "sc-kundenportal-prod" }
+      test = { name = "sc-kundenportal-test" }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_je_umgebung_ohne_identitaet" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_service_connection = true
+    environment_service_connections = {
+      dev = {
+        name = "sc-kundenportal-dev"
+        identity = {
+          tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          subscription_name = "Seed Entwicklung"
+          client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        }
+      }
+      prod = { name = "sc-kundenportal-prod" }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_je_umgebung_identitaet_als_guid" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    create_service_connection = true
+    environment_service_connections = {
+      dev = {
+        name = "sc-kundenportal-dev"
+        identity = {
+          tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          subscription_name = "Seed Entwicklung"
+          client_id         = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+        }
+      }
+      prod = {
+        name = "sc-kundenportal-prod"
+        identity = {
+          tenant_id         = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+          subscription_id   = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+          subscription_name = " "
+          client_id         = "id-kundenportal-prod"
+        }
+      }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_je_umgebung_namen_eindeutig" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    environment_service_connections = {
+      dev  = { name = "sc-kundenportal" }
+      prod = { name = "sc-kundenportal" }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_je_umgebung_ohne_zeilenumbruch" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    environment_service_connections = {
+      dev  = { name = "sc-kundenportal-dev\n    confirmDataDeletion: true" }
+      prod = { name = "sc-kundenportal-prod" }
+    }
+  }
+
+  expect_failures = [var.environment_service_connections]
+}
+
+run "service_connection_fehlt_ganz" {
+  command   = plan
+  state_key = "selbstbedienung"
+
+  variables {
+    service_connection = ""
+  }
+
+  expect_failures = [var.service_connection]
+}

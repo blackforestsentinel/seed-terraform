@@ -44,6 +44,10 @@ extends:
     # Ohne Frontend (project.yaml: hosting.staticWebApp: none)
     frontend: false
 %{ endif ~}
+%{ if length(environment_service_connections) > 0 ~}
+    # Jede Umgebung hat eine eigene Service Connection (environments unten); diese gilt nur für
+    # Umgebungen ohne Angabe.
+%{ endif ~}
     serviceConnection: ${service_connection}
 %{ if pool != "" ~}
     # Eigener Agent-Pool statt Microsoft-gehosteter Agents
@@ -71,4 +75,7 @@ extends:
     environments:
 %{ for env in environments ~}
       - name: ${env}
+%{ if length(environment_service_connections) > 0 ~}
+        serviceConnection: ${environment_service_connections[env]}
+%{ endif ~}
 %{ endfor ~}
